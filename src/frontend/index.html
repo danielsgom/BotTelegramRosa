@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BotTelegramRosa - Panel de Control</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-robot"></i> BotTelegramRosa
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#lotes-tab" onclick="switchTab('lotes-tab')">Lotes</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#links-tab" onclick="switchTab('links-tab')">Links de Pago</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#usuarios-tab" onclick="switchTab('usuarios-tab')">Usuarios</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#scheduler-tab" onclick="switchTab('scheduler-tab')">Scheduler</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#logs-tab" onclick="switchTab('logs-tab')">Logs</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#vip-tab" onclick="switchTab('vip-tab')">Mensaje VIP</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#configuracion-tab" onclick="switchTab('configuracion-tab')">Configuración</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Alert Area -->
+        <div id="alertArea"></div>
+
+        <!-- Lotes Tab (NEW) -->
+        <div id="lotes-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-collection"></i> Gestionar Lotes de Mensajes
+                    </h5>
+                    <button class="btn btn-success btn-sm" onclick="openCreateBatchModal()">
+                        <i class="bi bi-plus"></i> Nuevo Lote
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="batchesContainer">
+                        <div class="text-center text-muted">Cargando lotes...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Links de Pago Tab -->
+        <div id="links-tab" class="tab-content d-none">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-link"></i> Gestionar Links de Pago
+                    </h5>
+                    <button class="btn btn-success btn-sm" onclick="openCreateLinkModal()">
+                        <i class="bi bi-plus"></i> Nuevo Link
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="linksContainer" class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Nombre (Texto Visible)</th>
+                                    <th>URL</th>
+                                    <th>Idioma</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="linksTable">
+                                <tr><td colspan="3" class="text-center text-muted">Cargando links...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Usuarios Tab -->
+        <div id="usuarios-tab" class="tab-content d-none">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-people"></i> Usuarios Registrados
+                        <span id="usersCount" class="badge bg-secondary ms-2">0</span>
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="userSearch" class="form-control form-control-sm" placeholder="Buscar..." oninput="filterUsers()" style="width:200px">
+                        <button class="btn btn-outline-primary btn-sm" onclick="loadUsers()">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0" id="usuariosTableWrapper">
+                            <thead class="table-primary">
+                                <tr>
+                                    <th>Telegram ID</th>
+                                    <th>Username</th>
+                                    <th>Idioma</th>
+                                    <th>Estado</th>
+                                    <th>VIP / Secuencia</th>
+                                    <th>Último msg</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="usuariosTable">
+                                <tr><td colspan="7" class="text-center text-muted py-3">Cargando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scheduler Tab -->
+        <div id="scheduler-tab" class="tab-content d-none">
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="bi bi-calendar-event"></i> Estado del Scheduler de Lotes
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="scheduleStateContainer">
+                                <div class="text-muted">Cargando estado...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="bi bi-info-circle"></i> Información
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Estado:</strong> <span id="schedulerStatus" class="badge bg-success">Activo</span></p>
+                            <p><strong>Intervalo:</strong> <span id="schedulerInterval">2 horas</span></p>
+                            <button class="btn btn-primary btn-sm" onclick="refreshSchedulerState()">
+                                <i class="bi bi-arrow-clockwise"></i> Actualizar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div id="logs-tab" class="tab-content d-none">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0"><i class="bi bi-terminal"></i> Logs de la aplicación</h5>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select id="logLevelFilter" class="form-select form-select-sm" style="width:110px" onchange="loadLogs()">
+                            <option value="">Todos</option>
+                            <option value="INFO">INFO</option>
+                            <option value="WARNING">WARNING</option>
+                            <option value="ERROR">ERROR</option>
+                            <option value="DEBUG">DEBUG</option>
+                        </select>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="logsAutoRefresh" checked>
+                            <label class="form-check-label" for="logsAutoRefresh">Auto</label>
+                        </div>
+                        <button class="btn btn-outline-primary btn-sm" onclick="loadLogs()">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="clearLogsView()">
+                            <i class="bi bi-x-circle"></i> Limpiar vista
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div id="logsContainer" style="height:600px;overflow-y:auto;background:#1e1e1e;font-family:monospace;font-size:.82rem;padding:.75rem">
+                        <span class="text-muted">Cargando logs...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mensaje VIP Tab -->
+        <div id="vip-tab" class="tab-content d-none">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0"><i class="bi bi-star-fill text-warning me-2"></i>Mensaje de Bienvenida VIP</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">Este mensaje se envía automáticamente al usuario cuando completa un pago. Incluye el enlace de invitación al grupo VIP.</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Imagen (opcional)</label>
+                                <input type="file" class="form-control" id="vipImage" accept="image/*">
+                                <div id="vipImagePreview" class="mt-2"></div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">URL de invitación al grupo VIP <span class="text-danger">*</span></label>
+                                <input type="url" class="form-control" id="vipInviteUrl" placeholder="https://t.me/+xxxxx">
+                            </div>
+                            <hr>
+                            <p class="text-muted small mb-2"><i class="bi bi-translate"></i> Texto del botón de invitación:</p>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-primary me-1">ES</span> Español</label>
+                                <input type="text" class="form-control form-control-sm" id="vipButtonEs" placeholder="Acceder al grupo VIP">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-success me-1">EN</span> English</label>
+                                <input type="text" class="form-control form-control-sm" id="vipButtonEn" placeholder="Join VIP group">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-secondary me-1">PT</span> Português</label>
+                                <input type="text" class="form-control form-control-sm" id="vipButtonPt" placeholder="Entrar no grupo VIP">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="text-muted small mb-2"><i class="bi bi-chat-text"></i> Texto del mensaje:</p>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-primary me-1">ES</span> Español <span class="text-danger">*</span></label>
+                                <textarea class="form-control form-control-sm" id="vipTextEs" rows="4" placeholder="¡Gracias por tu compra! Ya tienes acceso VIP."></textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-success me-1">EN</span> English</label>
+                                <textarea class="form-control form-control-sm" id="vipTextEn" rows="4" placeholder="Thank you for your purchase! You now have VIP access."></textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-secondary me-1">PT</span> Português</label>
+                                <textarea class="form-control form-control-sm" id="vipTextPt" rows="4" placeholder="Obrigado pela compra! Você já tem acesso VIP."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button class="btn btn-warning fw-bold" onclick="saveVipConfig()">
+                            <i class="bi bi-star-fill me-1"></i> Guardar Mensaje VIP
+                        </button>
+                        <span id="vipSaveStatus" class="ms-3 text-muted small"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuración Tab -->
+        <div id="configuracion-tab" class="tab-content d-none">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-gear"></i> Configuración
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Token API</label>
+                            <input type="text" class="form-control" id="apiToken" placeholder="Ingresa tu token API">
+                            <small class="text-muted">Este token se requiere para todas las peticiones API</small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Intervalo de Mensajes (horas)</label>
+                            <input type="number" class="form-control" id="messageInterval" min="1" value="2">
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Link de Canal VIP</label>
+                            <input type="text" class="form-control" id="vipChannelLink" placeholder="https://t.me/+xxxxx">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Idioma por Defecto</label>
+                            <select class="form-select" id="defaultLanguage">
+                                <option value="es">Español</option>
+                                <option value="en">English</option>
+                                <option value="fr">Français</option>
+                                <option value="de">Deutsch</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-success" onclick="saveSettings()">
+                        <i class="bi bi-check-circle"></i> Guardar Configuración
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Detail Modal -->
+    <div class="modal fade" id="userDetailModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-circle me-2"></i><span id="userDetailTitle">Usuario</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="userDetailBody">
+                    <div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm"></div> Cargando...</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    <button type="button" class="btn btn-warning" id="userDetailResumeBtn" style="display:none" onclick="resumeUserSequence()">
+                        <i class="bi bi-play-circle me-1"></i> Reanudar Secuencia
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Messages Modal -->
+    <div class="modal fade" id="userMessagesModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-chat-text"></i>
+                        Mensajes enviados a <span id="modalUserName"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0" id="userMessagesBody">
+                    <div class="text-center py-4 text-muted">Cargando...</div>
+                </div>
+                <div class="modal-footer">
+                    <small class="text-muted me-auto" id="userMessagesMeta"></small>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Batch Modal -->
+    <div class="modal fade" id="createBatchModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="batchModalTitle">Crear Nuevo Lote</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="batchForm">
+                        <div class="mb-3">
+                            <label class="form-label">Nombre del Lote</label>
+                            <input type="text" class="form-control" id="batchName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Descripción</label>
+                            <textarea class="form-control" id="batchDescription" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Orden de Rotación</label>
+                            <input type="number" class="form-control" id="batchOrder" min="1" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="saveBatch()">Guardar Lote</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Link Modal -->
+    <div class="modal fade" id="createLinkModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="linkModalTitle">Crear Nuevo Link</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="linkForm">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Nombre interno <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="linkName" placeholder="Ej: link-vip-es" required>
+                            <small class="text-muted">Identificador único del link (no visible para usuarios)</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">URL del Link <span class="text-danger">*</span></label>
+                            <input type="url" class="form-control" id="linkUrl" placeholder="https://pay.stripe.com/..." required>
+                        </div>
+                        <hr>
+                        <p class="text-muted small mb-2"><i class="bi bi-translate"></i> Texto del botón por idioma:</p>
+                        <div class="mb-2">
+                            <label class="form-label mb-1"><span class="badge bg-primary me-1">ES</span> Español <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control form-control-sm" id="linkNameEs" placeholder="Ej: Acceso VIP" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label mb-1"><span class="badge bg-success me-1">EN</span> English</label>
+                            <input type="text" class="form-control form-control-sm" id="linkNameEn" placeholder="Eg: VIP Access">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label mb-1"><span class="badge bg-secondary me-1">PT</span> Português</label>
+                            <input type="text" class="form-control form-control-sm" id="linkNamePt" placeholder="Ex: Acesso VIP">
+                        </div>
+                        <hr>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold"><i class="bi bi-clock-history me-1"></i> Duración del acceso (días)</label>
+                            <input type="number" class="form-control" id="linkDurationDays" value="0" min="0" placeholder="0">
+                            <small class="text-muted">0 = acceso vitalicio sin caducidad. >0 = días que dura el acceso VIP tras el pago.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold"><i class="bi bi-stripe me-1"></i> ID Stripe del link <span class="text-muted fw-normal">(plink_...)</span></label>
+                            <input type="text" class="form-control font-monospace" id="linkStripeId" placeholder="plink_1Tl3HHP7kx71w90VwGJkdRfX">
+                            <small class="text-muted">Cópialo desde Stripe Dashboard → Payment Links. Se usa para identificar qué producto compró el usuario en el webhook.</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="saveLink()">Guardar Link</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Message Modal -->
+    <div class="modal fade" id="createMessageModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="messageModalTitle">Agregar Mensaje al Lote</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="messageForm">
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label class="form-label">Título del Mensaje <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="messageTitle" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Orden en el Lote <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="messageSequenceOrder" min="1" required>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label"><span class="badge bg-primary me-1">ES</span> Texto en Español <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="messageTextEs" rows="3" required placeholder="Texto en español..."></textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label"><span class="badge bg-success me-1">EN</span> Text in English</label>
+                            <textarea class="form-control" id="messageTextEn" rows="3" placeholder="Text in English..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><span class="badge bg-secondary me-1">PT</span> Texto em Português</label>
+                            <textarea class="form-control" id="messageTextPt" rows="3" placeholder="Texto em português..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Imagen</label>
+                            <input type="file" class="form-control" id="messageImage" accept="image/*">
+                            <small class="text-muted">Formatos: JPG, PNG, GIF, WebP</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Links de Pago</label>
+                            <div id="stripLinksCheckboxes" class="border p-3 rounded" style="max-height: 200px; overflow-y: auto;">
+                                <small class="text-muted d-block mb-2">Cargando links disponibles...</small>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="saveMessage()">Guardar Mensaje</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Batch Modal -->
+    <div class="modal fade" id="viewBatchModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="batchViewTitle">Detalles del Lote</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="batchViewContent"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="static/js/app.js"></script>
+</body>
+</html>
