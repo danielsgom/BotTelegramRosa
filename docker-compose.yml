@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  bot-telegram-rosa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bot-telegram-rosa
+    ports:
+      - "8000:8000"
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - STRIPE_API_KEY=${STRIPE_API_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - DEBUG=${DEBUG:-False}
+      - VIP_CHANNEL_INVITE_LINK=${VIP_CHANNEL_INVITE_LINK}
+    depends_on:
+      - postgres
+    volumes:
+      - ./src:/app/src
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    networks:
+      - bot-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bot-postgres
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - bot-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: bot-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - bot-network
+
+volumes:
+  postgres_data:
+
+networks:
+  bot-network:
+    driver: bridge
