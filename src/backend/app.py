@@ -20,6 +20,7 @@ from bot import telegram_bot
 from scheduler import message_scheduler
 from stripe_handler import StripeHandler
 from language import LanguageDetector, get_message_template
+from utils import convert_to_madrid_time, datetime_to_iso_madrid
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -1186,7 +1187,7 @@ async def get_user_messages(
     token: str = Depends(verify_api_token),
     db: Session = Depends(get_db)
 ):
-    """Get messages sent to a specific user with full content and links"""
+    """Get messages sent to a specific user with full content and links, with Madrid timezone"""
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -1210,7 +1211,7 @@ async def get_user_messages(
                 for lnk in msg.strip_links
             ]
             result.append({
-                "sent_at": record.sent_at.isoformat() if record.sent_at else None,
+                "sent_at": datetime_to_iso_madrid(record.sent_at),
                 "status": record.status,
                 "message_id": msg.id,
                 "title": msg.title,

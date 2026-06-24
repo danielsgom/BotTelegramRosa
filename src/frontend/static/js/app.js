@@ -299,6 +299,8 @@ function openAddMessageModal(batchId) {
     document.getElementById('messageForm').reset();
     document.getElementById('messageModalTitle').textContent = 'Agregar Mensaje al Lote';
     const editId = document.getElementById('editMessageId'); if (editId) editId.remove();
+    const preview = document.getElementById('messageImagePreview');
+    if (preview) preview.style.display = 'none';
     loadLinkCheckboxes();
     new bootstrap.Modal(document.getElementById('createMessageModal')).show();
 }
@@ -321,6 +323,15 @@ async function editMessage(batchId, msgId) {
         document.getElementById('messageTextEs').value = trans.es || msg.text || '';
         document.getElementById('messageTextEn').value = trans.en || '';
         document.getElementById('messageTextPt').value = trans.pt || '';
+        const preview = document.getElementById('messageImagePreview');
+        if (preview) {
+            if (msg.image_url) {
+                preview.querySelector('img').src = msg.image_url;
+                preview.style.display = '';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
         await loadLinkCheckboxes();
         const selectedIds = (msg.strip_links || []).map(l => String(l.id));
         document.querySelectorAll('.strip-link-checkbox').forEach(cb => { cb.checked = selectedIds.includes(cb.value); });
@@ -426,7 +437,31 @@ const langColors = { es: 'primary', en: 'success', fr: 'info', de: 'warning', it
 function formatDate(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
-    return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    if (isNaN(d)) return '—';
+    // Always display in Madrid timezone
+    return new Intl.DateTimeFormat('es-ES', {
+        day: '2-digit', month: '2-digit', year: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+        timeZone: 'Europe/Madrid'
+    }).format(d);
+}
+
+function formatTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d)) return '—';
+    return new Intl.DateTimeFormat('es-ES', {
+        hour: '2-digit', minute: '2-digit',
+        timeZone: 'Europe/Madrid'
+    }).format(d);
+}
+
+function escHtml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 function renderUsersTable(users) {
@@ -482,7 +517,88 @@ async function openUserDetail(userId) {
         <tr><td>Msgs enviados</td><td>${u.messages_sent_count}</td></tr>
         <tr><td>Registrado</td><td>${formatDate(u.joined_at)}</td></tr>
         <tr><td>Último mensaje</td><td>${formatDate(u.last_message_at)}</td></tr>
-    </table>`;
+    </table>
+    <div class="d-grid">
+        <button class="btn btn-primary" onclick="openUserMessages(${u.id})">
+            <i class="bi bi-chat-text me-1"></i> Ver mensajes enviados
+        </button>
+    </div>`;
+}
+
+// ─── User Messages (chat history) ────────────────────────────────────────
+const _msgStatusMap = {
+    sent:    { icon: '✓', label: 'Enviado',    cls: 'text-success' },
+    failed:  { icon: '✗', label: 'Fallido',    cls: 'text-danger' },
+    pending: { icon: '⏳', label: 'Pendiente', cls: 'text-warning' },
+};
+const _langFlags = { es: '🇪🇸', en: '🇬🇧', pt: '🇵🇹', fr: '🇫🇷', de: '🇩🇪', it: '🇮🇹', ru: '🇷🇺' };
+
+async function openUserMessages(userId) {
+    const u = allUsers.find(x => x.id === userId);
+    const name = u ? ([u.first_name, u.last_name].filter(Boolean).join(' ') || u.username || `ID ${u.telegram_id}`) : `ID ${userId}`;
+    const nameEl = document.getElementById('modalUserName');
+    if (nameEl) nameEl.textContent = name;
+    const body = document.getElementById('userMessagesBody');
+    const meta = document.getElementById('userMessagesMeta');
+    if (meta) meta.textContent = '';
+    if (body) body.innerHTML = `<div class="text-center py-5 text-muted"><div class="spinner-border spinner-border-sm"></div> Cargando mensajes...</div>`;
+    new bootstrap.Modal(document.getElementById('userMessagesModal')).show();
+    try {
+        const res = await fetch(`${API_BASE}/users/${userId}/messages`, { headers: { 'X-API-Token': apiToken } });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        renderUserMessages(data.messages || [], name);
+        if (meta) meta.textContent = `${(data.messages || []).length} mensaje(s) · Hora de Madrid`;
+    } catch (e) {
+        if (body) body.innerHTML = `<div class="text-center py-5 text-danger">Error al cargar los mensajes</div>`;
+    }
+}
+
+function renderUserMessages(messages, userName) {
+    const body = document.getElementById('userMessagesBody');
+    if (!body) return;
+    if (!messages.length) {
+        body.innerHTML = `<div class="text-center py-5 text-muted"><div style="font-size:3rem">💬</div><p class="mb-0">No hay mensajes enviados a este usuario</p></div>`;
+        return;
+    }
+    const bubbles = messages.map(msg => {
+        const st = _msgStatusMap[msg.status] || { icon: '·', label: msg.status || '?', cls: 'text-muted' };
+        const flag = _langFlags[(msg.language || '').toLowerCase()] || '🌐';
+        let img = '';
+        if (msg.image_url) {
+            img = `<img src="${escHtml(msg.image_url)}" alt="" class="img-fluid rounded mb-2" style="max-height:280px;width:100%;object-fit:cover" onerror="this.style.display='none'">`;
+        }
+        let links = '';
+        if (msg.links && msg.links.length) {
+            const chips = msg.links.map(l =>
+                `<a href="${escHtml(l.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-primary rounded-pill me-1 mb-1"><i class="bi bi-link-45deg"></i> ${escHtml(l.name)}</a>`
+            ).join('');
+            links = `<div class="mt-2 pt-2 border-top"><div class="text-muted small text-uppercase mb-1" style="letter-spacing:.05em">Enlaces de pago</div>${chips}</div>`;
+        }
+        const text = msg.text ? `<div class="mb-1" style="white-space:pre-wrap">${escHtml(msg.text)}</div>` : '';
+        return `<div class="d-flex mb-3">
+            <div class="flex-shrink-0 me-2 rounded-circle bg-primary d-flex align-items-center justify-content-center text-white" style="width:34px;height:34px">🤖</div>
+            <div class="flex-grow-1" style="max-width:640px">
+                <div class="small text-muted mb-1">Bot → ${escHtml(userName)} <span class="ms-1">${flag}</span></div>
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light py-2 d-flex justify-content-between align-items-center">
+                        <strong class="text-primary">${escHtml(msg.title || 'Mensaje')}</strong>
+                        <span class="badge bg-secondary">Paso #${msg.sequence_order ?? '?'}</span>
+                    </div>
+                    <div class="card-body py-2">
+                        ${img}
+                        ${text}
+                        ${links}
+                    </div>
+                    <div class="card-footer bg-white py-1 d-flex justify-content-between align-items-center">
+                        <small class="${st.cls} fw-semibold">${st.icon} ${st.label}</small>
+                        <small class="text-muted"><i class="bi bi-clock"></i> ${formatDate(msg.sent_at)}</small>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+    body.innerHTML = `<div class="p-3" style="background:#f8f1f4">${bubbles}</div>`;
 }
 
 async function resumeUserSequence() {
