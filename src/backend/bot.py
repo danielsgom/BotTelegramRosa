@@ -348,9 +348,6 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
 
             db.close()
 
-            # Echo message (or implement your logic)
-            await update.message.reply_text("Thanks for your message! 👋")
-
         except Exception as e:
             logger.error(f"Error handling message: {e}")
 

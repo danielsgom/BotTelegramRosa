@@ -1,0 +1,28 @@
+# .aicontext/manifest.yaml
+# AI Context configuration for BotTelegramRosa
+
+name: BotTelegramRosa
+version: 1.0.0
+description: AI context for BotTelegramRosa
+
+# ─── Assistants ───────────────────────────────────────────────────────────────────
+assistants:
+  - copilot
+
+# ─── Marketplace sources ──────────────────────────────────────────────────
+marketplace:
+  - github:inditex/cac-moyaagentrules
+
+# ─── Templates ────────────────────────────────────────────────────────────
+templates:
+  - 
+  - "github:inditex/cac-moyaagentrules#templates/itx-coding"
+  - "github:inditex/cac-moyaagentrules#templates/amiga-python-2"
+  - "github:inditex/cac-moyaagentrules#templates/sdd"
+  - "github:inditex/cac-moyaagentrules#templates/api-grpc"
+  - "github:inditex/cac-moyaagentrules#templates/api-events"
+
+# ─── MCP Servers ──────────────────────────────────────────────────────────────
+mcps:
+  - name: 
+
