@@ -1201,23 +1201,44 @@ async def get_user_messages(
             .all()
         )
 
+        import json as _json
+        user_lang = user.language or "es"
+
         result = []
         for record in sent_records:
             msg = db.query(Message).filter(Message.id == record.message_id).first()
             if not msg:
                 continue
-            links = [
-                {"name": lnk.name, "url": lnk.url, "language": lnk.language}
-                for lnk in msg.strip_links
-            ]
+
+            # Resolve text in the user's language (same logic as the bot when sending)
+            text_out = msg.text
+            if msg.text_translations:
+                try:
+                    trans = _json.loads(msg.text_translations)
+                    text_out = trans.get(user_lang) or trans.get("es") or msg.text
+                except Exception:
+                    pass
+
+            # Resolve link names in the user's language (same logic as the bot)
+            links = []
+            for lnk in msg.strip_links:
+                link_name = lnk.name
+                if lnk.name_translations:
+                    try:
+                        name_trans = _json.loads(lnk.name_translations)
+                        link_name = name_trans.get(user_lang) or name_trans.get("es") or lnk.name
+                    except Exception:
+                        pass
+                links.append({"name": link_name, "url": lnk.url, "language": lnk.language})
+
             result.append({
                 "sent_at": datetime_to_iso_madrid(record.sent_at),
                 "status": record.status,
                 "message_id": msg.id,
                 "title": msg.title,
-                "text": msg.text,
+                "text": text_out,
                 "image_url": msg.image_url if msg.image_url and msg.image_url.strip() else None,
-                "language": msg.language,
+                "language": user_lang,
                 "sequence_order": msg.sequence_order,
                 "links": links,
             })
