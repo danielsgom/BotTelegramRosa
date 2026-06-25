@@ -22,6 +22,7 @@ function switchTab(tabId) {
     document.getElementById(tabId).classList.remove('d-none');
     document.querySelector(`a[href="#${tabId}"]`).classList.add('active');
     if (tabId === 'lotes-tab') loadBatches();
+    else if (tabId === 'mensajes-tab') { loadUsersForChat(); loadPredefinedAssets(); }
     else if (tabId === 'links-tab') loadStripLinks();
     else if (tabId === 'usuarios-tab') loadUsers();
     else if (tabId === 'scheduler-tab') refreshSchedulerState();
@@ -727,4 +728,378 @@ async function saveVipConfig() {
         showAlert('Error al guardar: ' + e.message, 'danger');
         if (statusEl) statusEl.textContent = '';
     }
+}
+
+// ─── Manual Messaging Feature ────────────────────────────────────────────────
+
+let currentUserId = null;
+let currentUserTelegramId = null;
+let allUsersChat = [];
+let allPredefinedAssets = [];
+let allStripeLinks = [];
+let selectedAssetType = null;
+
+async function loadUsersForChat() {
+    try {
+        const res = await fetch(`${API_BASE}/admin/users?limit=100`, {
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!res.ok) throw new Error('Failed to load users');
+        const data = await res.json();
+        allUsersChat = data.users;
+        renderUsersList();
+    } catch (e) {
+        console.error('Error loading users:', e);
+        showAlert('Error al cargar usuarios', 'danger');
+    }
+}
+
+function renderUsersList() {
+    const list = document.getElementById('usersListChat');
+    if (!allUsersChat.length) {
+        list.innerHTML = '<div class="text-center text-muted p-3">Sin usuarios</div>';
+        return;
+    }
+    
+    list.innerHTML = allUsersChat.map(u => `
+        <div class="list-group-item list-group-item-action p-2 cursor-pointer" onclick="selectUserForChat(${u.id}, ${u.telegram_id}, '${u.first_name || ''} ${u.last_name || ''}')">
+            <div class="d-flex justify-content-between align-items-start">
+                <div style="flex: 1;">
+                    <h6 class="mb-0">
+                        ${u.first_name || u.username || 'User'}
+                        ${u.unread_count > 0 ? `<span class="badge bg-danger ms-2">${u.unread_count}</span>` : ''}
+                    </h6>
+                    <small class="text-muted">@${u.username || u.telegram_id}</small>
+                    ${u.last_message_preview ? `<div class="small text-truncate mt-1">${u.last_message_preview}</div>` : ''}
+                </div>
+                <span class="badge bg-${u.is_vip ? 'gold' : 'secondary'} ms-2">
+                    ${u.is_vip ? 'VIP' : 'Regular'}
+                </span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function filterUsersForChat() {
+    const search = document.getElementById('userSearchChat').value.toLowerCase();
+    const filtered = allUsersChat.filter(u => 
+        (u.first_name && u.first_name.toLowerCase().includes(search)) ||
+        (u.last_name && u.last_name.toLowerCase().includes(search)) ||
+        (u.username && u.username.toLowerCase().includes(search)) ||
+        u.telegram_id.toString().includes(search)
+    );
+    allUsersChat = filtered;
+    renderUsersList();
+}
+
+async function selectUserForChat(userId, telegramId, userName) {
+    currentUserId = userId;
+    currentUserTelegramId = telegramId;
+    document.getElementById('chatUserName').textContent = userName;
+    document.getElementById('chatUserInfo').textContent = `telegram_id: ${telegramId}`;
+    document.getElementById('messageInputArea').style.display = 'block';
+    document.getElementById('assetsPanelBtn').style.display = 'inline-block';
+    
+    // Fetch chat history
+    try {
+        const res = await fetch(`${API_BASE}/admin/users/${userId}/chat/history?limit=50`, {
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        renderChatHistory(data.messages);
+        
+        // Mark messages as read
+        await fetch(`${API_BASE}/admin/users/${userId}/chat/mark-read`, {
+            method: 'POST',
+            headers: { 'X-API-Token': apiToken }
+        });
+    } catch (e) {
+        console.error('Error loading chat:', e);
+        showAlert('Error al cargar historial', 'danger');
+    }
+}
+
+function renderChatHistory(messages) {
+    const chatDiv = document.getElementById('chatMessages');
+    if (!messages || !messages.length) {
+        chatDiv.innerHTML = '<div class="text-center text-muted mt-5">Sin mensajes previos</div>';
+        return;
+    }
+    
+    console.log('Rendering chat history, messages count:', messages.length);
+    console.log('Messages:', messages);
+    
+    chatDiv.innerHTML = messages.map(m => {
+        const isAdmin = m.sent_by === 'admin';
+        const msgClass = isAdmin ? 'ms-auto bg-primary text-white' : 'me-auto bg-light';
+        const icon = {
+            'text': '💬',
+            'audio': '🎵',
+            'image': '🖼️',
+            'video': '🎬',
+            'link': '🔗'
+        }[m.message_type] || '📨';
+        
+        let content = m.content || '';
+        let preview = '';
+        
+        // Add file preview if available
+        if (m.attachment_url) {
+            const ext = m.attachment_url.split('.').pop().toLowerCase();
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+            const isAudio = ['mp3', 'wav', 'ogg', 'm4a'].includes(ext);
+            const isVideo = ['mp4', 'webm', 'mov'].includes(ext);
+            
+            if (isImage) {
+                preview = `<div class="mt-2"><img src="${m.attachment_url}" alt="Preview" style="max-width: 100%; max-height: 200px; border-radius: 4px;"></div>`;
+            } else if (isAudio) {
+                preview = `<div class="mt-2"><audio controls style="max-width: 100%; height: 30px;"><source src="${m.attachment_url}" type="audio/mpeg"></audio></div>`;
+            } else if (isVideo) {
+                preview = `<div class="mt-2"><video controls style="max-width: 100%; max-height: 200px; border-radius: 4px;"><source src="${m.attachment_url}" type="video/mp4"></video></div>`;
+            } else {
+                preview = `<div class="mt-2"><a href="${m.attachment_url}" target="_blank" class="btn btn-sm btn-outline-info">${icon} Ver archivo</a></div>`;
+            }
+        }
+        
+        const time = new Date(m.created_at).toLocaleTimeString('es-ES');
+        const status = m.status === 'delivered' ? '✓✓' : (m.status === 'sent' ? '✓' : '✗');
+        
+        // Show unread indicator for user messages
+        const unreadIndicator = !isAdmin && !m.is_read ? '<span class="badge bg-danger ms-2">No leído</span>' : '';
+        
+        return `
+            <div class="d-flex mb-2">
+                <div class="chat-message ${msgClass} p-2 rounded" style="max-width: 70%; word-wrap: break-word;">
+                    ${content}
+                    ${preview}
+                    <div class="small mt-1" style="opacity: 0.7;">
+                        ${time}
+                        ${isAdmin ? `<span class="ms-2">${status}</span>` : ''}
+                        ${unreadIndicator}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    // Scroll to bottom
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+}
+
+async function loadPredefinedAssets() {
+    try {
+        // Load predefined assets
+        const resAssets = await fetch(`${API_BASE}/admin/predefined-assets`, {
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!resAssets.ok) throw new Error('Failed to load assets');
+        const dataAssets = await resAssets.json();
+        allPredefinedAssets = dataAssets.assets || [];
+        
+        // Load stripe links
+        const resLinks = await fetch(`${API_BASE}/admin/stripe-links`, {
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!resLinks.ok) throw new Error('Failed to load links');
+        const dataLinks = await resLinks.json();
+        allStripeLinks = dataLinks.links || [];
+    } catch (e) {
+        console.error('Error loading assets:', e);
+    }
+}
+
+function showPredefinedAssets(assetType) {
+    selectedAssetType = assetType;
+    const modal = new bootstrap.Modal(document.getElementById('assetsModal'));
+    const filtered = allPredefinedAssets.filter(a => a.asset_type === assetType);
+    
+    const container = document.getElementById('assetsListContainer');
+    if (!filtered.length) {
+        container.innerHTML = `<div class="text-center text-muted">No hay ${assetType}s predefinidos</div>`;
+    } else {
+        container.innerHTML = `
+            <div class="row">
+                ${filtered.map(a => `
+                    <div class="col-md-6 mb-2">
+                        <div class="card p-2 cursor-pointer" onclick="selectAsset(${a.id})">
+                            <h6>${a.name}</h6>
+                            ${a.description ? `<small>${a.description}</small>` : ''}
+                            ${a.file_url ? `<small class="text-muted">📎 ${a.file_url.split('/').pop()}</small>` : ''}
+                            ${a.link_url ? `<small class="text-muted">🔗 ${a.link_url}</small>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+    modal.show();
+}
+
+function selectAsset(assetId) {
+    const asset = allPredefinedAssets.find(a => a.id === assetId);
+    if (asset) {
+        document.getElementById('messageText').value = asset.name;
+        bootstrap.Modal.getInstance(document.getElementById('assetsModal')).hide();
+        sendManualMessage(assetId);
+    }
+}
+
+function showStripeLinks() {
+    const modal = new bootstrap.Modal(document.getElementById('linksModal'));
+    
+    const container = document.getElementById('linksListContainer');
+    if (!allStripeLinks.length) {
+        container.innerHTML = `<div class="text-center text-muted">No hay links de pago predefinidos</div>`;
+    } else {
+        container.innerHTML = `
+            <div class="list-group">
+                ${allStripeLinks.map(link => `
+                    <label class="list-group-item">
+                        <input type="checkbox" class="form-check-input me-2 stripe-link-checkbox" value="${link.id}" data-name="${link.name}" data-url="${link.url}">
+                        <strong>${link.name}</strong>
+                        <small class="text-muted d-block">${link.url}</small>
+                    </label>
+                `).join('')}
+            </div>
+            <div class="mt-3 d-flex gap-2">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button class="btn btn-success btn-sm ms-auto" onclick="sendSelectedLinks()">Enviar Links Seleccionados</button>
+            </div>
+        `;
+    }
+    modal.show();
+}
+
+function sendSelectedLinks() {
+    const checkboxes = document.querySelectorAll('.stripe-link-checkbox:checked');
+    if (!checkboxes.length) {
+        showAlert('Selecciona al menos un link', 'warning');
+        return;
+    }
+    
+    const linkIds = Array.from(checkboxes).map(cb => cb.value).join(',');
+    bootstrap.Modal.getInstance(document.getElementById('linksModal')).hide();
+    sendManualMessage(null, linkIds);
+}
+
+function showAddAssetForm() {
+    // Create new asset modal
+    const form = `
+        <form id="newAssetForm">
+            <div class="mb-2">
+                <label>Nombre</label>
+                <input type="text" class="form-control form-control-sm" id="newAssetName" required>
+            </div>
+            <div class="mb-2">
+                <label>Categoría</label>
+                <input type="text" class="form-control form-control-sm" id="newAssetCategory">
+            </div>
+            <div class="mb-2">
+                <label>Descripción</label>
+                <textarea class="form-control form-control-sm" id="newAssetDesc" rows="2"></textarea>
+            </div>
+            <div class="mb-2">
+                <label>Archivo / Link</label>
+                <input type="file" class="form-control form-control-sm" id="newAssetFile">
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="createNewAsset('${selectedAssetType}')">Crear</button>
+        </form>
+    `;
+    document.getElementById('assetsListContainer').innerHTML = form;
+}
+
+async function createNewAsset(assetType) {
+    const name = document.getElementById('newAssetName').value;
+    const category = document.getElementById('newAssetCategory').value;
+    const desc = document.getElementById('newAssetDesc').value;
+    const file = document.getElementById('newAssetFile').files[0];
+    
+    if (!name) {
+        showAlert('Ingresa un nombre', 'warning');
+        return;
+    }
+    
+    const fd = new FormData();
+    fd.append('name', name);
+    fd.append('asset_type', assetType);
+    fd.append('category', category);
+    fd.append('description', desc);
+    if (file) fd.append('file', file);
+    if (assetType === 'link') fd.append('link_url', document.getElementById('newAssetFile').value);
+    
+    try {
+        const res = await fetch(`${API_BASE}/admin/predefined-assets`, {
+            method: 'POST',
+            headers: { 'X-API-Token': apiToken },
+            body: fd
+        });
+        if (!res.ok) throw new Error('Failed');
+        showAlert('Archivo creado', 'success');
+        await loadPredefinedAssets();
+        showPredefinedAssets(assetType);
+    } catch (e) {
+        showAlert('Error al crear archivo: ' + e.message, 'danger');
+    }
+}
+
+async function sendManualMessage(assetId = null, linkIds = null) {
+    if (!currentUserId) {
+        showAlert('Selecciona un usuario', 'warning');
+        return;
+    }
+    
+    const content = document.getElementById('messageText').value;
+    if (!content && !assetId && !linkIds) {
+        showAlert('Escribe un mensaje o selecciona un archivo/link', 'warning');
+        return;
+    }
+    
+    const fd = new FormData();
+    if (content) fd.append('content', content);
+    fd.append('message_type', 'text');
+    if (assetId) fd.append('predefined_asset_id', assetId);
+    if (linkIds) fd.append('strip_link_ids', linkIds);
+    
+    try {
+        const res = await fetch(`${API_BASE}/admin/users/${currentUserId}/chat/message`, {
+            method: 'POST',
+            headers: { 'X-API-Token': apiToken },
+            body: fd
+        });
+        if (!res.ok) throw new Error('Failed');
+        document.getElementById('messageText').value = '';
+        await selectUserForChat(currentUserId, currentUserTelegramId, document.getElementById('chatUserName').textContent);
+        showAlert('Mensaje enviado', 'success');
+    } catch (e) {
+        showAlert('Error al enviar: ' + e.message, 'danger');
+    }
+}
+
+function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const fd = new FormData();
+    fd.append('content', file.name);
+    fd.append('message_type', 'file');
+    fd.append('attachment', file);
+    
+    // Upload file with message
+    fetch(`${API_BASE}/admin/users/${currentUserId}/chat/message`, {
+        method: 'POST',
+        headers: { 'X-API-Token': apiToken },
+        body: fd
+    }).then(res => {
+        if (res.ok) {
+            selectUserForChat(currentUserId, currentUserTelegramId, document.getElementById('chatUserName').textContent);
+            showAlert('Archivo enviado', 'success');
+        } else throw new Error('Upload failed');
+    }).catch(e => showAlert('Error: ' + e.message, 'danger'));
+    
+    document.getElementById('fileUpload').value = '';
+}
+
+function toggleAssetsPanel() {
+    // Can be expanded for more options later
 }

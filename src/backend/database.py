@@ -199,6 +199,47 @@ class VipConfig(Base):
         return f"<VipConfig invite_url={self.invite_url}>"
 
 
+class PredefinedAsset(Base):
+    __tablename__ = "predefined_assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    asset_type = Column(String(50), nullable=False)  # 'audio', 'image', 'video', 'link'
+    file_url = Column(String(500), nullable=True)  # Para archivos
+    link_url = Column(String(500), nullable=True)  # Para links
+    category = Column(String(100), nullable=True, index=True)
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PredefinedAsset {self.id}: {self.name} ({self.asset_type})>"
+
+
+class UserMessage(Base):
+    __tablename__ = "user_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    content = Column(Text, nullable=True)  # Texto del mensaje
+    message_type = Column(String(50), default="text")  # 'text', 'audio', 'image', 'video', 'link'
+    sent_by = Column(String(20), nullable=False)  # 'user' o 'admin'
+    attachment_url = Column(String(500), nullable=True)  # URL del archivo
+    attachment_file_id = Column(String(500), nullable=True)  # Telegram file_id para audios/imágenes
+    telegram_message_id = Column(Integer, nullable=True)  # ID del mensaje en Telegram
+    status = Column(String(20), default="sent")  # 'sent', 'delivered', 'failed'
+    is_read = Column(Boolean, default=False, index=True)  # Leído por el admin
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    read_at = Column(DateTime, nullable=True)  # Cuándo fue leído
+    delivered_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<UserMessage {self.id}: user={self.user_id} type={self.message_type}>"
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -214,6 +255,8 @@ def run_migrations():
         ("strip_links", "duration_days",        "INTEGER DEFAULT 0"),
         ("strip_links", "stripe_link_id",       "VARCHAR(100)"),
         ("users",       "vip_message_sent_at",  "DATETIME"),
+        ("user_messages", "is_read",            "BOOLEAN DEFAULT 0"),
+        ("user_messages", "read_at",            "DATETIME"),
     ]
     with engine.connect() as conn:
         for table, col, definition in migrations:
@@ -221,7 +264,8 @@ def run_migrations():
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {definition}"))
                 conn.commit()
                 logger.info(f"[Migration] Added column '{col}' to '{table}'")
-            except Exception:
+            except Exception as e:
+                # Column might already exist, that's ok
                 pass
 
 

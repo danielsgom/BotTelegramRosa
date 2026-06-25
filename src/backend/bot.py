@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.error import TelegramError
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from database import User, Message, MessageSent, get_db
+from database import User, Message, MessageSent, UserMessage, get_db
 from language import LanguageDetector, get_message_template
 from config import get_settings
 import asyncio
@@ -60,11 +60,20 @@ class TelegramBot:
             # Build Application INSIDE this thread so it uses the correct event loop
             application = Application.builder().token(self.bot_token).build()
 
-            # Add handlers
+            # Add handlers - capture ALL message types
             application.add_handler(CommandHandler("start", self.start_command))
             application.add_handler(CommandHandler("help", self.help_command))
             application.add_handler(CommandHandler("status", self.status_command))
+            # Text messages
             application.add_handler(MessageHandler(filters.TEXT, self.handle_message))
+            # Voice/audio messages
+            application.add_handler(MessageHandler(filters.VOICE, self.handle_voice))
+            # Photo messages
+            application.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
+            # Video messages
+            application.add_handler(MessageHandler(filters.VIDEO, self.handle_video))
+            # Document/file messages
+            application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
             application.add_handler(CallbackQueryHandler(self.handle_callback))
             logger.info("Bot handlers registered")
 
@@ -258,7 +267,9 @@ class TelegramBot:
                     text=msg_data["text"],
                     image_url=msg_data["image_url"],
                     buttons=msg_data["buttons"] or None,
-                    db=None
+                    db=None,
+                    user_db_id=db_user.id,
+                    message_type="text"
                 )
                 if success:
                     db_user.current_message_step = msg_data["step"]
@@ -335,21 +346,152 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
             logger.error(f"Error in status_command: {e}")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle regular messages"""
+        """Handle regular text messages"""
         try:
             user = update.effective_user
+            message_text = update.message.text or ""
             db = next(get_db())
 
-            # Update user activity
             db_user = db.query(User).filter(User.telegram_id == user.id).first()
             if db_user:
                 db_user.last_message_at = datetime.utcnow()
                 db.commit()
+                
+                user_msg = UserMessage(
+                    user_id=db_user.id,
+                    content=message_text,
+                    message_type="text",
+                    sent_by="user",
+                    status="delivered",
+                    delivered_at=datetime.utcnow()
+                )
+                db.add(user_msg)
+                db.commit()
+                logger.info(f"Text message from user {user.id}: {message_text[:50]}")
 
             db.close()
-
         except Exception as e:
-            logger.error(f"Error handling message: {e}")
+            logger.error(f"Error handling text message: {e}")
+
+    async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle voice/audio messages"""
+        try:
+            user = update.effective_user
+            db = next(get_db())
+
+            db_user = db.query(User).filter(User.telegram_id == user.id).first()
+            if db_user:
+                db_user.last_message_at = datetime.utcnow()
+                db.commit()
+                
+                # Try to get file info
+                voice = update.message.voice
+                duration = voice.duration if voice else 0
+                
+                user_msg = UserMessage(
+                    user_id=db_user.id,
+                    content=f"🎵 Voice message ({duration}s)",
+                    message_type="audio",
+                    sent_by="user",
+                    status="delivered",
+                    delivered_at=datetime.utcnow()
+                )
+                db.add(user_msg)
+                db.commit()
+                logger.info(f"Voice message from user {user.id}")
+
+            db.close()
+        except Exception as e:
+            logger.error(f"Error handling voice message: {e}")
+
+    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle photo messages"""
+        try:
+            user = update.effective_user
+            db = next(get_db())
+
+            db_user = db.query(User).filter(User.telegram_id == user.id).first()
+            if db_user:
+                db_user.last_message_at = datetime.utcnow()
+                db.commit()
+                
+                caption = update.message.caption or "🖼️ Photo"
+                
+                user_msg = UserMessage(
+                    user_id=db_user.id,
+                    content=caption,
+                    message_type="image",
+                    sent_by="user",
+                    status="delivered",
+                    delivered_at=datetime.utcnow()
+                )
+                db.add(user_msg)
+                db.commit()
+                logger.info(f"Photo from user {user.id}: {caption[:50]}")
+
+            db.close()
+        except Exception as e:
+            logger.error(f"Error handling photo: {e}")
+
+    async def handle_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle video messages"""
+        try:
+            user = update.effective_user
+            db = next(get_db())
+
+            db_user = db.query(User).filter(User.telegram_id == user.id).first()
+            if db_user:
+                db_user.last_message_at = datetime.utcnow()
+                db.commit()
+                
+                caption = update.message.caption or "🎬 Video"
+                
+                user_msg = UserMessage(
+                    user_id=db_user.id,
+                    content=caption,
+                    message_type="video",
+                    sent_by="user",
+                    status="delivered",
+                    delivered_at=datetime.utcnow()
+                )
+                db.add(user_msg)
+                db.commit()
+                logger.info(f"Video from user {user.id}: {caption[:50]}")
+
+            db.close()
+        except Exception as e:
+            logger.error(f"Error handling video: {e}")
+
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle document/file messages"""
+        try:
+            user = update.effective_user
+            db = next(get_db())
+
+            db_user = db.query(User).filter(User.telegram_id == user.id).first()
+            if db_user:
+                db_user.last_message_at = datetime.utcnow()
+                db.commit()
+                
+                doc = update.message.document
+                file_name = doc.file_name if doc else "File"
+                caption = update.message.caption or f"📎 {file_name}"
+                
+                user_msg = UserMessage(
+                    user_id=db_user.id,
+                    content=caption,
+                    message_type="text",
+                    sent_by="user",
+                    status="delivered",
+                    delivered_at=datetime.utcnow()
+                )
+                db.add(user_msg)
+                db.commit()
+                logger.info(f"Document from user {user.id}: {file_name}")
+
+            db.close()
+        except Exception as e:
+            logger.error(f"Error handling document: {e}")
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline button callbacks"""
@@ -366,7 +508,9 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
         text: str,
         image_url: Optional[str] = None,
         buttons: Optional[list] = None,
-        db: Optional[Session] = None
+        db: Optional[Session] = None,
+        user_db_id: Optional[int] = None,
+        message_type: str = "text"
     ) -> bool:
         """
         Send message to user
@@ -377,6 +521,8 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
             image_url: Optional image URL
             buttons: Optional inline buttons list
             db: Database session for recording
+            user_db_id: Database user ID for saving to chat history
+            message_type: Type of message (text, image, etc.)
             
         Returns:
             Success status
@@ -397,6 +543,7 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
                 reply_markup = InlineKeyboardMarkup(keyboard)
 
             # Send message
+            telegram_msg_id = None
             if image_url and image_url.strip():
                 # Local path: send as binary file; remote URL: send directly
                 if image_url.startswith("http://") or image_url.startswith("https://"):
@@ -418,6 +565,7 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
                     )
                     if hasattr(photo, 'close'):
                         photo.close()
+                    telegram_msg_id = message.message_id
                 else:
                     message = await self.application.bot.send_message(
                         chat_id=user_id,
@@ -425,6 +573,7 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
                         reply_markup=reply_markup,
                         parse_mode="HTML"
                     )
+                    telegram_msg_id = message.message_id
             else:
                 message = await self.application.bot.send_message(
                     chat_id=user_id,
@@ -432,6 +581,36 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
                     reply_markup=reply_markup,
                     parse_mode="HTML"
                 )
+                telegram_msg_id = message.message_id
+
+            # Save to chat history (UserMessage table)
+            if user_db_id:
+                try:
+                    if db is None:
+                        db = next(get_db())
+                        close_db = True
+                    else:
+                        close_db = False
+
+                    user_msg = UserMessage(
+                        user_id=user_db_id,
+                        content=text,
+                        message_type=message_type,
+                        sent_by="admin",  # System/bot messages shown as admin
+                        attachment_url=image_url if image_url else None,
+                        status="delivered",
+                        telegram_message_id=telegram_msg_id,
+                        delivered_at=datetime.utcnow()
+                    )
+                    db.add(user_msg)
+                    db.commit()
+
+                    if close_db:
+                        db.close()
+
+                    logger.info(f"Auto message saved to chat history for user {user_db_id}")
+                except Exception as e:
+                    logger.error(f"Error saving auto message to history: {e}")
 
             logger.info(f"Message sent to user {user_id}")
             return True
@@ -492,7 +671,9 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
                         text=message.text,
                         image_url=message.image_url,
                         buttons=buttons,
-                        db=db
+                        db=db,
+                        user_db_id=user.id,
+                        message_type="text"
                     )
 
                     if success:
@@ -522,6 +703,103 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
         except Exception as e:
             logger.error(f"Error in bulk send: {e}")
             return stats
+
+    async def send_manual_message(
+        self,
+        user_id: int,
+        content: Optional[str] = None,
+        message_type: str = "text",
+        attachment_url: Optional[str] = None
+    ) -> Optional[int]:
+        """
+        Send a manual message to a user (from admin)
+        
+        Args:
+            user_id: Telegram user ID
+            content: Message text content
+            message_type: Type of message (text, audio, image, video, link)
+            attachment_url: URL or local path to the attachment if applicable
+            
+        Returns:
+            Telegram message ID on success, None on failure
+        """
+        try:
+            if not self.application:
+                logger.error("Bot not initialized")
+                return None
+
+            telegram_msg_id = None
+
+            # Helper function to get file for Telegram (URL or bytes)
+            def get_file_for_telegram(url: str):
+                """Convert local paths to file bytes, keep external URLs as-is"""
+                if not url:
+                    return None
+                
+                # If it's a local path (starts with /uploads/), read as bytes
+                if url.startswith("/uploads/"):
+                    import os
+                    file_path = os.path.join("uploads", url.split("/uploads/")[1])
+                    if os.path.exists(file_path):
+                        with open(file_path, "rb") as f:
+                            return f.read()
+                    else:
+                        logger.warning(f"Local file not found: {file_path}")
+                        return None
+                
+                # Otherwise, return as-is (could be external URL or file path)
+                return url
+
+            # Send based on message type
+            if message_type == "text":
+                telegram_msg_id = await self.application.bot.send_message(
+                    chat_id=user_id,
+                    text=content or "📨 New message from admin"
+                )
+                telegram_msg_id = telegram_msg_id.message_id
+
+            elif message_type == "audio":
+                if attachment_url:
+                    file_data = get_file_for_telegram(attachment_url)
+                    if file_data is not None:
+                        telegram_msg_id = await self.application.bot.send_audio(
+                            chat_id=user_id,
+                            audio=file_data,
+                            title="Audio"
+                        )
+                        telegram_msg_id = telegram_msg_id.message_id
+
+            elif message_type == "image":
+                if attachment_url:
+                    file_data = get_file_for_telegram(attachment_url)
+                    if file_data is not None:
+                        telegram_msg_id = await self.application.bot.send_photo(
+                            chat_id=user_id,
+                            photo=file_data,
+                            caption=content or "🖼️ Image from admin"
+                        )
+                        telegram_msg_id = telegram_msg_id.message_id
+
+            elif message_type == "video":
+                if attachment_url:
+                    file_data = get_file_for_telegram(attachment_url)
+                    if file_data is not None:
+                        telegram_msg_id = await self.application.bot.send_video(
+                            chat_id=user_id,
+                            video=file_data,
+                            caption=content or "🎬 Video from admin"
+                        )
+                        telegram_msg_id = telegram_msg_id.message_id
+
+            logger.info(f"Manual message sent to user {user_id}: type={message_type}")
+            return telegram_msg_id
+
+        except TelegramError as e:
+            logger.error(f"Telegram error sending manual message to {user_id}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error sending manual message to {user_id}: {e}")
+            return None
 
 
 # Global bot instance

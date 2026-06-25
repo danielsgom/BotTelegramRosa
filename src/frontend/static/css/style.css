@@ -1,1 +1,51 @@
 /* Tailwind CSS handles all styles — see index.html */
+
+/* Chat UI Styles */
+.chat-message {
+    border-radius: 8px;
+    line-height: 1.4;
+}
+
+.list-group-item.cursor-pointer {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.list-group-item.cursor-pointer:hover {
+    background-color: #f0f0f0;
+}
+
+#chatMessages {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 1rem;
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+/* Scrollbar styling */
+.overflow-y-auto::-webkit-scrollbar {
+    width: 8px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Predefined assets grid */
+.card:hover {
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}

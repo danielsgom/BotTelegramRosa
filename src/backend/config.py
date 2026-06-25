@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     MESSAGE_SENDING_INTERVAL: float = 2.0  # hours (accepts decimals, e.g. 0.0167 ≈ 1 min)
     CHECK_SCHEDULE_EVERY: int = 60  # seconds
 
+    # Server URLs
+    SERVER_URL: str = "http://localhost:8000"  # URL base para archivos
+
     # VIP Channel
     VIP_CHANNEL_INVITE_LINK: str = "https://t.me/+"  # Will be configured
 
