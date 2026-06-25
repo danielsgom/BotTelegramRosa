@@ -21,14 +21,7 @@ class LanguageDetector:
     TELEGRAM_LANGUAGE_MAP = {
         "es": "es",
         "en": "en",
-        "fr": "fr",
-        "de": "de",
-        "it": "it",
         "pt": "pt",
-        "ru": "ru",
-        "ja": "ja",
-        "zh": "zh",
-        "ko": "ko",
     }
 
     @staticmethod
@@ -51,7 +44,8 @@ class LanguageDetector:
         base_lang = user_language_code.split("_")[0].lower()
         if base_lang in LanguageDetector.TELEGRAM_LANGUAGE_MAP:
             return LanguageDetector.TELEGRAM_LANGUAGE_MAP[base_lang]
-        return fallback
+        # Language not in map (e.g., ja, ko, ru) → default to "en"
+        return "en"
 
     @staticmethod
     def detect_combined(
