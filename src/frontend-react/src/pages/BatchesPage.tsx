@@ -9,7 +9,7 @@ import {
 import { useState } from 'react'
 import {
   useBatches, useCreateBatch, useUpdateBatch, useDeleteBatch, useActivateBatch,
-  useBatchMessages, useAddMessage, useDeleteMessage,
+  useBatchMessages, useAddMessage, useUpdateMessage, useDeleteMessage,
 } from '../hooks/useBatches'
 import { useStripeLinks } from '../hooks/useStripeLinks'
 import ConfirmDialog from '../components/common/ConfirmDialog'
@@ -105,9 +105,11 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
   const { data: msgs = [], isLoading } = useBatchMessages(batch.id)
   const { data: links = [] } = useStripeLinks()
   const addMsg = useAddMessage()
+  const updMsg = useUpdateMessage()
   const delMsg = useDeleteMessage()
 
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<BatchMessage | null>(null)
   const [viewing, setViewing] = useState<BatchMessage | null>(null)
   const [form, setForm] = useState({
     title: '', text_es: '', text_en: '', text_pt: '', sequence_order: '',
@@ -120,23 +122,50 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  const handleAdd = async () => {
+  const resetForm = () => {
+    setForm({ title: '', text_es: '', text_en: '', text_pt: '', sequence_order: '', image: null })
+    setSelectedLinkIds([])
+    setErr('')
+  }
+
+  const openAdd = () => { resetForm(); setEditing(null); setOpen(true) }
+
+  const openEdit = (m: BatchMessage) => {
+    setForm({
+      title: m.title,
+      text_es: m.text_translations?.es ?? m.text ?? '',
+      text_en: m.text_translations?.en ?? '',
+      text_pt: m.text_translations?.pt ?? '',
+      sequence_order: String(m.sequence_order),
+      image: null,
+    })
+    setSelectedLinkIds(m.strip_links?.map((l) => l.id) ?? [])
+    setErr('')
+    setEditing(m)
+    setOpen(true)
+  }
+
+  const handleSave = async () => {
     try {
-      await addMsg.mutateAsync({
-        batchId: batch.id,
-        data: {
-          title: form.title,
-          text_es: form.text_es,
-          text_en: form.text_en || undefined,
-          text_pt: form.text_pt || undefined,
-          sequence_order: form.sequence_order ? Number(form.sequence_order) : undefined,
-          strip_link_ids: selectedLinkIds.length ? selectedLinkIds.join(',') : undefined,
-          image: form.image ?? undefined,
-        },
-      })
-      setOpen(false); setErr(''); setSelectedLinkIds([])
+      const payload = {
+        title: form.title,
+        text_es: form.text_es,
+        text_en: form.text_en || undefined,
+        text_pt: form.text_pt || undefined,
+        sequence_order: form.sequence_order ? Number(form.sequence_order) : undefined,
+        strip_link_ids: selectedLinkIds.length ? selectedLinkIds.join(',') : '',
+        image: form.image ?? undefined,
+      }
+      if (editing) {
+        await updMsg.mutateAsync({ batchId: batch.id, messageId: editing.id, data: payload })
+      } else {
+        await addMsg.mutateAsync({ batchId: batch.id, data: payload })
+      }
+      setOpen(false); resetForm(); setEditing(null)
     } catch (e) { setErr((e as Error).message) }
   }
+
+  const isPending = editing ? updMsg.isPending : addMsg.isPending
 
   if (isLoading) return <LoadingCard lines={2} />
 
@@ -144,7 +173,7 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
     <Box mt="3">
       <Flex align="center" justify="between" mb="2">
         <Text size="2" weight="medium" color="gray">Mensajes ({msgs.length})</Text>
-        <Button size="1" variant="soft" onClick={() => { setOpen(true); setErr(''); setSelectedLinkIds([]) }}>
+        <Button size="1" variant="soft" onClick={openAdd}>
           <PlusIcon /> Añadir
         </Button>
       </Flex>
@@ -157,6 +186,7 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
             {m.image_url && <Badge size="1" color="blue" variant="soft">img</Badge>}
             {m.strip_links?.length > 0 && <Badge size="1" color="purple" variant="soft">{m.strip_links.length} links</Badge>}
             <IconButton size="1" variant="ghost" title="Ver detalle" onClick={() => setViewing(m)}><EyeOpenIcon /></IconButton>
+            <IconButton size="1" variant="ghost" title="Editar" onClick={() => openEdit(m)}><Pencil1Icon /></IconButton>
             <IconButton size="1" variant="ghost" color="red" onClick={() => setDeleting(m)}><TrashIcon /></IconButton>
           </Flex>
         ))}
@@ -166,10 +196,10 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
       {/* Detail viewer */}
       <MessageDetailDialog msg={viewing} open={!!viewing} onOpenChange={(v) => !v && setViewing(null)} />
 
-      {/* Add message dialog */}
-      <Dialog.Root open={open} onOpenChange={setOpen}>
+      {/* Add / Edit message dialog */}
+      <Dialog.Root open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null) } }}>
         <Dialog.Content maxWidth="520px">
-          <Dialog.Title>Añadir mensaje al lote</Dialog.Title>
+          <Dialog.Title>{editing ? `Editar: ${editing.title}` : 'Añadir mensaje al lote'}</Dialog.Title>
           {err && <Callout.Root color="red" mb="2"><Callout.Text>{err}</Callout.Text></Callout.Root>}
           <ScrollArea style={{ maxHeight: '65vh' }}>
             <Flex direction="column" gap="3" mt="3" pr="2">
@@ -182,7 +212,12 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
               <LinkCheckboxList links={links} selectedIds={selectedLinkIds} onChange={setSelectedLinkIds} />
               <Separator size="4" />
               <Box>
-                <Text size="1" color="gray" weight="medium" mb="1">Imagen (opcional)</Text>
+                <Text size="1" color="gray" weight="medium" mb="1">
+                  {editing ? 'Nueva imagen (deja vacío para mantener la actual)' : 'Imagen (opcional)'}
+                </Text>
+                {editing && editing.image_url && (
+                  <img src={editing.image_url} alt="actual" style={{ maxWidth: 120, borderRadius: 6, display: 'block', marginBottom: 6 }} />
+                )}
                 <input type="file" accept="image/*"
                   onChange={(e) => setForm((f) => ({ ...f, image: e.target.files?.[0] ?? null }))}
                   style={{ fontSize: 13 }} />
@@ -191,7 +226,9 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
           </ScrollArea>
           <Flex gap="3" mt="4" justify="end">
             <Dialog.Close><Button variant="soft" color="gray">Cancelar</Button></Dialog.Close>
-            <Button onClick={handleAdd} loading={addMsg.isPending}>Añadir</Button>
+            <Button onClick={handleSave} loading={isPending}>
+              {editing ? 'Guardar cambios' : 'Añadir'}
+            </Button>
           </Flex>
         </Dialog.Content>
       </Dialog.Root>
