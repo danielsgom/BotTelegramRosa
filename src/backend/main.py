@@ -82,10 +82,26 @@ app.include_router(admin_message_blocks_router)
 
 # ── Static file mounts ────────────────────────────────────────────────────────
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-_FRONTEND_STATIC = os.path.join(os.path.dirname(_BACKEND_DIR), "frontend", "static")
+_SRC_DIR = os.path.dirname(_BACKEND_DIR)
 
-if os.path.exists(_FRONTEND_STATIC):
-    app.mount("/static", StaticFiles(directory=_FRONTEND_STATIC), name="static")
+# FRONTEND_DIR env var selects which built frontend to serve.
+# Default: legacy frontend/static; set to absolute path of a Vite dist/ folder
+# to serve the React build (e.g. FRONTEND_DIR=/app/src/frontend-react/dist).
+_FRONTEND_DIR = os.environ.get("FRONTEND_DIR", "")
+
+if _FRONTEND_DIR and os.path.isdir(_FRONTEND_DIR):
+    # Serve Vite SPA: static assets at /assets, fallback index.html at /
+    _assets_dir = os.path.join(_FRONTEND_DIR, "assets")
+    if os.path.isdir(_assets_dir):
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
+    logger.info("Serving React frontend from %s", _FRONTEND_DIR)
+else:
+    # Legacy frontend (Bootstrap, vanilla JS)
+    _FRONTEND_STATIC = os.path.join(_SRC_DIR, "frontend", "static")
+    if os.path.exists(_FRONTEND_STATIC):
+        app.mount("/static", StaticFiles(directory=_FRONTEND_STATIC), name="static")
+        logger.info("Serving legacy frontend static files")
 
 if os.path.exists(settings.UPLOAD_DIR):
     app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
