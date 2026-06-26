@@ -42,6 +42,8 @@ class User(Base):
     last_message_at = Column(DateTime, default=datetime.utcnow)
     current_batch_id = Column(Integer, ForeignKey("message_batches.id"), nullable=True)
     current_message_step = Column(Integer, default=0)
+    send_error = Column(String(500), nullable=True)
+    send_error_at = Column(DateTime, nullable=True)
 
     payments = relationship("Payment", back_populates="user")
     messages_received = relationship("MessageSent", back_populates="user")
@@ -306,6 +308,9 @@ def run_migrations():
         ("users",       "vip_message_sent_at",  "DATETIME"),
         ("user_messages", "is_read",            "BOOLEAN DEFAULT 0"),
         ("user_messages", "read_at",            "DATETIME"),
+        # Send-error tracking: flag blocked/forbidden users
+        ("users",         "send_error",          "VARCHAR(500)"),
+        ("users",         "send_error_at",       "DATETIME"),
     ]
     
     # Create quick_messages table if not exists

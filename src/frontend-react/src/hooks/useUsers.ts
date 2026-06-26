@@ -9,7 +9,7 @@ import {
 
 const KEY = 'users'
 
-export const useUsers = (params?: { active?: boolean; vip?: boolean }) =>
+export const useUsers = (params?: { active?: boolean; vip?: boolean; status?: string }) =>
   useQuery({ queryKey: [KEY, params], queryFn: () => fetchUsers(params) })
 
 export const useCreateUser = () => {

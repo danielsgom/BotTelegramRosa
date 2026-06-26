@@ -4,7 +4,7 @@ import {
 } from '@radix-ui/themes'
 import {
   PlusIcon, Pencil1Icon, TrashIcon, ReloadIcon, PlayIcon,
-  PersonIcon, ChatBubbleIcon, HeartIcon,
+  PersonIcon, ChatBubbleIcon, HeartIcon, ExclamationTriangleIcon,
 } from '@radix-ui/react-icons'
 import { useState } from 'react'
 import { useUsers, useUpdateUser, useDeleteUser, useResumeSequence } from '../hooks/useUsers'
@@ -92,6 +92,17 @@ function UserDetailDialog({
               <DataList.Label>Últ. actividad</DataList.Label>
               <DataList.Value>{fmt(user.last_message_at)}</DataList.Value>
             </DataList.Item>
+            {user.send_error && (
+              <DataList.Item>
+                <DataList.Label>Error de envío</DataList.Label>
+                <DataList.Value>
+                  <Flex direction="column" gap="1">
+                    <Badge color="red" size="1"><ExclamationTriangleIcon /> {user.send_error}</Badge>
+                    <Text size="1" color="gray">{fmt(user.send_error_at)}</Text>
+                  </Flex>
+                </DataList.Value>
+              </DataList.Item>
+            )}
           </DataList.Root>
         </ScrollArea>
         <Flex gap="2" mt="4" wrap="wrap">
@@ -131,6 +142,7 @@ function UserCardList({
                 <Text size="3" weight="bold">{fmtName(u)}</Text>
                 {u.is_vip && <Badge color="pink" size="1">VIP</Badge>}
                 <StatusBadge active={u.is_active} />
+                {u.send_error && <Badge color="red" size="1" title={u.send_error}><ExclamationTriangleIcon /></Badge>}
               </Flex>
               <Flex gap="2" wrap="wrap">
                 <Text size="1" color="gray">{u.telegram_id}</Text>
@@ -164,7 +176,8 @@ function UserCardList({
 
 export default function UsersPage() {
   const isMobile = useIsMobile()
-  const { data: users = [], isLoading, error, refetch, isFetching } = useUsers()
+  const [statusFilter, setStatusFilter] = useState<'' | 'error' | 'active'>('')
+  const { data: users = [], isLoading, error, refetch, isFetching } = useUsers(statusFilter ? { status: statusFilter } : undefined)
   const updateUser = useUpdateUser()
   const deleteUser = useDeleteUser()
   const resumeSeq = useResumeSequence()
@@ -223,7 +236,22 @@ export default function UsersPage() {
   return (
     <Box>
       <Flex align="center" justify="between" mb="4" gap="3" wrap="wrap">
-        <Heading size="5">Usuarios ({users.length})</Heading>
+        <Flex align="center" gap="3" wrap="wrap">
+          <Heading size="5">Usuarios ({users.length})</Heading>
+          <Flex gap="1">
+            {(['', 'active', 'error'] as const).map((f) => (
+              <Button
+                key={f}
+                size="1"
+                variant={statusFilter === f ? 'solid' : 'soft'}
+                color={f === 'error' ? 'red' : undefined}
+                onClick={() => setStatusFilter(f)}
+              >
+                {f === '' ? 'Todos' : f === 'active' ? 'Activos' : <><ExclamationTriangleIcon /> Con error</>}
+              </Button>
+            ))}
+          </Flex>
+        </Flex>
         <Flex gap="2">
           <TextField.Root placeholder="Buscar…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 200 }} />
           <Button variant="soft" size="2" onClick={() => refetch()} loading={isFetching}>
@@ -277,7 +305,16 @@ export default function UsersPage() {
                     <Table.Cell><Text size="2">{fmtName(u)}</Text></Table.Cell>
                     <Table.Cell><Text size="2">{u.username ? `@${u.username}` : '—'}</Text></Table.Cell>
                     <Table.Cell><Badge size="1">{u.language}</Badge></Table.Cell>
-                    <Table.Cell><StatusBadge active={u.is_active} /></Table.Cell>
+                    <Table.Cell>
+                      <Flex align="center" gap="1">
+                        <StatusBadge active={u.is_active} />
+                        {u.send_error && (
+                          <Badge color="red" size="1" title={u.send_error}>
+                            <ExclamationTriangleIcon />
+                          </Badge>
+                        )}
+                      </Flex>
+                    </Table.Cell>
                     <Table.Cell><StatusBadge vip={u.is_vip} /></Table.Cell>
                     <Table.Cell>
                       <Text size="2">{u.current_batch_name ?? '—'}</Text>

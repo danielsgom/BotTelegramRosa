@@ -25,9 +25,15 @@ async def get_users(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
+    status: Optional[str] = None,
 ):
     try:
-        users = db.query(User).order_by(User.joined_at.desc()).offset(skip).limit(limit).all()
+        q = db.query(User)
+        if status == "error":
+            q = q.filter(User.send_error != None)  # noqa: E711
+        elif status == "active":
+            q = q.filter(User.is_active == True, User.send_error == None)  # noqa: E711,E712
+        users = q.order_by(User.joined_at.desc()).offset(skip).limit(limit).all()
 
         result = []
         for u in users:
@@ -59,6 +65,8 @@ async def get_users(
                 "messages_sent_count": messages_sent,
                 "joined_at": datetime_to_iso_madrid(u.joined_at),
                 "last_message_at": datetime_to_iso_madrid(u.last_message_at),
+                "send_error": u.send_error,
+                "send_error_at": datetime_to_iso_madrid(u.send_error_at),
             })
 
         return {"success": True, "count": len(result), "users": result}
@@ -193,6 +201,47 @@ async def get_user_messages(
         raise
     except Exception as e:
         logger.error(f"Error fetching user messages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{user_id}")
+async def update_user(
+    user_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    username: Optional[str] = None,
+    language: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    is_vip: Optional[bool] = None,
+    clear_error: Optional[bool] = None,
+):
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if first_name is not None:
+            user.first_name = first_name
+        if last_name is not None:
+            user.last_name = last_name
+        if username is not None:
+            user.username = username or None
+        if language is not None:
+            user.language = language
+        if is_active is not None:
+            user.is_active = is_active
+        if is_vip is not None:
+            user.is_vip = is_vip
+        if clear_error:
+            user.send_error = None
+            user.send_error_at = None
+        db.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -145,9 +145,14 @@ class BatchMessageScheduler:
                         user.current_message_step = msg_data["step"]
                         user.current_batch_id = msg_data["batch_id"]
                         user.last_message_at = datetime.utcnow()
+                        user.send_error = None
+                        user.send_error_at = None
                         db.add(MessageSent(message_id=msg_data["id"], user_id=user.id, status="sent"))
                         sent += 1
                     else:
+                        err = telegram_bot._send_errors.get(user.telegram_id, "Error al enviar")
+                        user.send_error = err
+                        user.send_error_at = datetime.utcnow()
                         failed += 1
 
                 except Exception as e:

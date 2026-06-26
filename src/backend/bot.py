@@ -32,6 +32,7 @@ class TelegramBot:
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.polling_thread = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None  # polling thread's event loop
+        self._send_errors: dict = {}  # {telegram_id: error_str} — last error per user
 
     async def start(self):
         """Start the bot"""
@@ -613,13 +614,16 @@ Active: {'Yes ✅' if user.is_active else 'No ❌'}
                     logger.error(f"Error saving auto message to history: {e}")
 
             logger.info(f"Message sent to user {user_id}")
+            self._send_errors.pop(user_id, None)
             return True
 
         except TelegramError as e:
             logger.error(f"Telegram error sending message to {user_id}: {e}")
+            self._send_errors[user_id] = str(e)
             return False
         except Exception as e:
             logger.error(f"Error sending message to {user_id}: {e}")
+            self._send_errors[user_id] = str(e)
             return False
 
     async def send_bulk_messages(self, message_id: int, db: Session) -> dict:

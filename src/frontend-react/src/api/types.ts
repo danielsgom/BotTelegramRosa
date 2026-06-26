@@ -59,6 +59,8 @@ export interface User {
   messages_sent_count: number
   joined_at: string
   last_message_at: string
+  send_error: string | null
+  send_error_at: string | null
 }
 
 export interface UserDetail {
