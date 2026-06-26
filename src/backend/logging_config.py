@@ -20,7 +20,7 @@ class _MemHandler(logging.Handler):
         from datetime import datetime
         with self._lock:
             self._buf.appendleft({
-                "ts":    datetime.fromtimestamp(record.created).strftime("%H:%M:%S"),
+                "ts":    datetime.fromtimestamp(record.created).isoformat(),
                 "level": record.levelname,
                 "name":  record.name,
                 "msg":   record.getMessage(),
