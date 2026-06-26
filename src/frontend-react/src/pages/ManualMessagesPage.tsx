@@ -1,12 +1,13 @@
 import {
   Box, Flex, Heading, Card, Button, Text, TextField, TextArea,
-  Badge, Callout, ScrollArea, Dialog, IconButton, Separator,
+  Badge, Callout, ScrollArea, Dialog, IconButton, Separator, Checkbox,
 } from '@radix-ui/themes'
 import {
   PaperPlaneIcon, PersonIcon, MagnifyingGlassIcon,
-  ImageIcon, FileIcon, Link2Icon, LightningBoltIcon, LayersIcon,
+  ImageIcon, FileIcon, Link2Icon, LightningBoltIcon, LayersIcon, ArrowLeftIcon,
 } from '@radix-ui/react-icons'
 import { useState, useRef, useEffect } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import {
   useAdminUsers, useChatHistory, useSendMessage, useMarkRead,
   useQuickMessages, useMessageBlocks, useSendMessageBlock,
@@ -110,6 +111,8 @@ function UserItem({ user, selected, onSelect }: { user: AdminUser; selected: boo
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ManualMessagesPage() {
+  const isMobile = useIsMobile()
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list')
   const [search, setSearch] = useState('')
   const [selectedUserId, setSelectedUserId] = useState(0)
   const [messageText, setMessageText] = useState('')
@@ -150,6 +153,7 @@ export default function ManualMessagesPage() {
   const handleSelectUser = (id: number) => {
     setSelectedUserId(id)
     setMessageText('')
+    if (isMobile) setMobileView('chat')
   }
 
   const handleSendText = async () => {
@@ -190,63 +194,66 @@ export default function ManualMessagesPage() {
   const selectedUser = users.find((u) => u.id === selectedUserId)
   const messages = chatData?.messages ?? []
 
+  const userListPanel = (
+    <Card style={isMobile ? { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { width: 260, minWidth: 260, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Box pb="2">
+        <TextField.Root placeholder="Buscar usuario…" value={search} onChange={(e) => setSearch(e.target.value)} size="2">
+          <TextField.Slot><MagnifyingGlassIcon /></TextField.Slot>
+        </TextField.Root>
+      </Box>
+      <ScrollArea style={{ flex: 1 }}>
+        {usersLoading ? (
+          <LoadingCard lines={4} />
+        ) : users.length === 0 ? (
+          <Box p="2"><Text size="2" color="gray">Sin usuarios.</Text></Box>
+        ) : (
+          <Flex direction="column" gap="1">
+            {users.map((u) => (
+              <UserItem key={u.id} user={u} selected={u.id === selectedUserId} onSelect={() => handleSelectUser(u.id)} />
+            ))}
+          </Flex>
+        )}
+      </ScrollArea>
+    </Card>
+  )
+
+  const chatHeader = (
+    <Flex align="center" gap="2" pb="3" style={{ borderBottom: '1px solid var(--gray-4)' }}>
+      {isMobile && (
+        <IconButton variant="ghost" size="1" onClick={() => setMobileView('list')}><ArrowLeftIcon /></IconButton>
+      )}
+      <PersonIcon />
+      <Text weight="bold">{selectedUser ? fmtName(selectedUser) : '…'}</Text>
+      {selectedUser?.is_vip && <Badge color="pink" size="1">VIP</Badge>}
+      {selectedUser?.username && <Text size="1" color="gray">@{selectedUser.username}</Text>}
+    </Flex>
+  )
+
   return (
     <Box style={{ height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
-      <Heading size="5" mb="3">Mensajes Manuales</Heading>
+      {!isMobile && <Heading size="5" mb="3">Mensajes Manuales</Heading>}
+      {isMobile && mobileView === 'list' && <Heading size="4" mb="2">Mensajes Manuales</Heading>}
 
       <Flex style={{ flex: 1, minHeight: 0, gap: 12 }}>
-        {/* User List */}
-        <Card style={{ width: 260, minWidth: 260, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <Box pb="2">
-            <TextField.Root
-              placeholder="Buscar usuario…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              size="2"
-            >
-              <TextField.Slot>
-                <MagnifyingGlassIcon />
-              </TextField.Slot>
-            </TextField.Root>
-          </Box>
-          <ScrollArea style={{ flex: 1 }}>
-            {usersLoading ? (
-              <LoadingCard lines={4} />
-            ) : users.length === 0 ? (
-              <Box p="2"><Text size="2" color="gray">Sin usuarios.</Text></Box>
-            ) : (
-              <Flex direction="column" gap="1">
-                {users.map((u) => (
-                  <UserItem
-                    key={u.id}
-                    user={u}
-                    selected={u.id === selectedUserId}
-                    onSelect={() => handleSelectUser(u.id)}
-                  />
-                ))}
-              </Flex>
-            )}
-          </ScrollArea>
-        </Card>
+        {/* Mobile: show either user list or chat */}
+        {isMobile ? (
+          mobileView === 'list' ? userListPanel : null
+        ) : (
+          userListPanel
+        )}
 
         {/* Chat Area */}
+        {(!isMobile || mobileView === 'chat') && (
         <Card style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-          {!selectedUserId ? (
+          {!selectedUserId && !isMobile ? (
             <Flex align="center" justify="center" style={{ flex: 1 }} direction="column" gap="2">
               <PersonIcon width={40} height={40} color="var(--gray-8)" />
               <Text color="gray">Selecciona un usuario para chatear.</Text>
             </Flex>
-          ) : (
+          ) : selectedUserId ? (
             <>
               {/* Header */}
-              <Flex align="center" gap="2" pb="3" style={{ borderBottom: '1px solid var(--gray-4)' }}>
-                <PersonIcon />
-                <Text weight="bold">{selectedUser ? fmtName(selectedUser) : '…'}</Text>
-                {selectedUser?.is_vip && <Badge color="pink" size="1">VIP</Badge>}
-                {selectedUser?.username && (
-                  <Text size="1" color="gray">@{selectedUser.username}</Text>
-                )}
-              </Flex>
+              {chatHeader}
 
               {/* Messages */}
               <ScrollArea style={{ flex: 1, padding: '12px 0' }}>
@@ -266,44 +273,13 @@ export default function ManualMessagesPage() {
               <Box style={{ borderTop: '1px solid var(--gray-4)', paddingTop: 12 }}>
                 {/* Toolbar */}
                 <Flex gap="1" mb="2">
-                  <IconButton
-                    size="1" variant="ghost" title="Imagen / Asset"
-                    onClick={() => { setAssetType('image'); setAssetOpen(true) }}
-                  >
-                    <ImageIcon />
-                  </IconButton>
-                  <IconButton
-                    size="1" variant="ghost" title="Archivo"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <FileIcon />
-                  </IconButton>
-                  <IconButton
-                    size="1" variant="ghost" title="Links de pago"
-                    onClick={() => setLinkOpen(true)}
-                  >
-                    <Link2Icon />
-                  </IconButton>
-                  <IconButton
-                    size="1" variant="ghost" title="Mensaje rápido"
-                    onClick={() => setQuickOpen(true)}
-                  >
-                    <LightningBoltIcon />
-                  </IconButton>
-                  <IconButton
-                    size="1" variant="ghost" title="Bloque de mensajes"
-                    onClick={() => setBlockOpen(true)}
-                  >
-                    <LayersIcon />
-                  </IconButton>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    style={{ display: 'none' }}
-                    onChange={(e) => { if (e.target.files?.[0]) handleSendFile(e.target.files[0]) }}
-                  />
+                  <IconButton size="1" variant="ghost" title="Imagen / Asset" onClick={() => { setAssetType('image'); setAssetOpen(true) }}><ImageIcon /></IconButton>
+                  <IconButton size="1" variant="ghost" title="Archivo" onClick={() => fileInputRef.current?.click()}><FileIcon /></IconButton>
+                  <IconButton size="1" variant="ghost" title="Links de pago" onClick={() => setLinkOpen(true)}><Link2Icon /></IconButton>
+                  <IconButton size="1" variant="ghost" title="Mensaje rápido" onClick={() => setQuickOpen(true)}><LightningBoltIcon /></IconButton>
+                  <IconButton size="1" variant="ghost" title="Bloque de mensajes" onClick={() => setBlockOpen(true)}><LayersIcon /></IconButton>
+                  <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={(e) => { if (e.target.files?.[0]) handleSendFile(e.target.files[0]) }} />
                 </Flex>
-
                 <Flex gap="2">
                   <TextArea
                     placeholder="Escribe un mensaje…"
@@ -319,8 +295,9 @@ export default function ManualMessagesPage() {
                 </Flex>
               </Box>
             </>
-          )}
+          ) : null}
         </Card>
+        )}
       </Flex>
 
       {/* Quick message picker */}
@@ -401,22 +378,39 @@ export default function ManualMessagesPage() {
       <Dialog.Root open={linkOpen} onOpenChange={setLinkOpen}>
         <Dialog.Content maxWidth="480px">
           <Dialog.Title>Links de Pago</Dialog.Title>
-          <Flex direction="column" gap="2" mt="3">
+          <Flex align="center" justify="between" mt="3" mb="2">
+            <Text size="2" color="gray">{selectedLinkIds.length} seleccionados</Text>
+            <Button
+              size="1" variant="ghost"
+              onClick={() =>
+                setSelectedLinkIds(
+                  selectedLinkIds.length === stripeLinks.length
+                    ? []
+                    : stripeLinks.map((l) => l.id),
+                )
+              }
+            >
+              {selectedLinkIds.length === stripeLinks.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+            </Button>
+          </Flex>
+          <Flex direction="column" gap="2">
             {stripeLinks.map((l) => (
-              <Flex key={l.id} align="center" gap="2">
-                <input
-                  type="checkbox"
-                  checked={selectedLinkIds.includes(l.id)}
-                  onChange={(e) =>
-                    setSelectedLinkIds((ids) =>
-                      e.target.checked ? [...ids, l.id] : ids.filter((x) => x !== l.id),
-                    )
-                  }
-                />
-                <Text size="2">{l.name}</Text>
-                <Text size="1" color="gray">({l.duration_days}d)</Text>
+              <Flex key={l.id} align="center" gap="2" asChild>
+                <label style={{ cursor: 'pointer' }}>
+                  <Checkbox
+                    checked={selectedLinkIds.includes(l.id)}
+                    onCheckedChange={(checked) =>
+                      setSelectedLinkIds((ids) =>
+                        checked ? [...ids, l.id] : ids.filter((x) => x !== l.id),
+                      )
+                    }
+                  />
+                  <Text size="2">{l.name}</Text>
+                  <Text size="1" color="gray">({l.duration_days}d)</Text>
+                </label>
               </Flex>
             ))}
+            {stripeLinks.length === 0 && <Text size="2" color="gray">Sin links.</Text>}
           </Flex>
           <Flex gap="3" mt="4" justify="end">
             <Dialog.Close><Button variant="soft" color="gray">Cancelar</Button></Dialog.Close>

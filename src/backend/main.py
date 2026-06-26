@@ -89,6 +89,11 @@ _SRC_DIR = os.path.dirname(_BACKEND_DIR)
 # to serve the React build (e.g. FRONTEND_DIR=/app/src/frontend-react/dist).
 _FRONTEND_DIR = os.environ.get("FRONTEND_DIR", "")
 
+# /uploads must be mounted BEFORE the root "/" mount, otherwise the SPA
+# StaticFiles handler intercepts all paths including /uploads/* returning 404.
+if os.path.exists(settings.UPLOAD_DIR):
+    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+
 if _FRONTEND_DIR and os.path.isdir(_FRONTEND_DIR):
     # Serve Vite SPA: static assets at /assets, fallback index.html at /
     _assets_dir = os.path.join(_FRONTEND_DIR, "assets")
@@ -102,9 +107,6 @@ else:
     if os.path.exists(_FRONTEND_STATIC):
         app.mount("/static", StaticFiles(directory=_FRONTEND_STATIC), name="static")
         logger.info("Serving legacy frontend static files")
-
-if os.path.exists(settings.UPLOAD_DIR):
-    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────

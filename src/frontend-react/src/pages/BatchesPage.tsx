@@ -1,10 +1,10 @@
 import {
   Box, Flex, Heading, Card, Button, Text, TextField, TextArea,
-  Dialog, IconButton, Badge, Callout, Separator,
+  Dialog, IconButton, Badge, Callout, Separator, Checkbox, ScrollArea,
 } from '@radix-ui/themes'
 import {
   PlusIcon, Pencil1Icon, TrashIcon, ChevronDownIcon, ChevronUpIcon,
-  CheckIcon, LayersIcon,
+  CheckIcon, LayersIcon, EyeOpenIcon,
 } from '@radix-ui/react-icons'
 import { useState } from 'react'
 import {
@@ -15,7 +15,89 @@ import { useStripeLinks } from '../hooks/useStripeLinks'
 import ConfirmDialog from '../components/common/ConfirmDialog'
 import StatusBadge from '../components/common/StatusBadge'
 import LoadingCard from '../components/common/LoadingCard'
-import type { Batch, BatchMessage } from '../api/types'
+import type { Batch, BatchMessage, StripLink } from '../api/types'
+
+// ─── Message Detail Dialog ───────────────────────────────────────────────────
+
+function MessageDetailDialog({ msg, open, onOpenChange }: { msg: BatchMessage | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+  if (!msg) return null
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Content maxWidth="560px">
+        <Dialog.Title>#{msg.sequence_order} — {msg.title}</Dialog.Title>
+        <ScrollArea style={{ maxHeight: '70vh' }}>
+          <Flex direction="column" gap="3" mt="2">
+            {msg.image_url && (
+              <img
+                src={msg.image_url}
+                alt={msg.title}
+                style={{ maxWidth: '100%', borderRadius: 8, display: 'block' }}
+              />
+            )}
+            <Box>
+              <Text size="1" color="gray" weight="medium">🇪🇸 Español</Text>
+              <Text as="p" size="2" style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>
+                {msg.text_translations?.es ?? msg.text}
+              </Text>
+            </Box>
+            {msg.text_translations?.en && (
+              <Box>
+                <Text size="1" color="gray" weight="medium">🇬🇧 English</Text>
+                <Text as="p" size="2" style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{msg.text_translations.en}</Text>
+              </Box>
+            )}
+            {msg.text_translations?.pt && (
+              <Box>
+                <Text size="1" color="gray" weight="medium">🇧🇷 Português</Text>
+                <Text as="p" size="2" style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{msg.text_translations.pt}</Text>
+              </Box>
+            )}
+            {msg.strip_links && msg.strip_links.length > 0 && (
+              <Box>
+                <Text size="1" color="gray" weight="medium" mb="1">Links adjuntos</Text>
+                <Flex gap="1" wrap="wrap">
+                  {msg.strip_links.map((l) => (
+                    <Badge key={l.id} color="blue" variant="soft">{l.name}</Badge>
+                  ))}
+                </Flex>
+              </Box>
+            )}
+          </Flex>
+        </ScrollArea>
+        <Flex justify="end" mt="4">
+          <Dialog.Close><Button variant="soft" color="gray">Cerrar</Button></Dialog.Close>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
+  )
+}
+
+// ─── Link checkbox selector ───────────────────────────────────────────────────
+
+function LinkCheckboxList({
+  links, selectedIds, onChange,
+}: { links: StripLink[]; selectedIds: number[]; onChange: (ids: number[]) => void }) {
+  const toggle = (id: number) =>
+    onChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id])
+  return (
+    <Flex direction="column" gap="2">
+      <Text size="1" color="gray" weight="medium">Links de pago</Text>
+      {links.map((l) => (
+        <Flex key={l.id} align="center" gap="2" asChild>
+          <label style={{ cursor: 'pointer' }}>
+            <Checkbox
+              checked={selectedIds.includes(l.id)}
+              onCheckedChange={() => toggle(l.id)}
+            />
+            <Text size="2">{l.name}</Text>
+            <Text size="1" color="gray">({l.duration_days}d)</Text>
+          </label>
+        </Flex>
+      ))}
+      {links.length === 0 && <Text size="1" color="gray">Sin links creados.</Text>}
+    </Flex>
+  )
+}
 
 // ─── Batch Messages sub-panel ────────────────────────────────────────────────
 
@@ -26,11 +108,12 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
   const delMsg = useDeleteMessage()
 
   const [open, setOpen] = useState(false)
+  const [viewing, setViewing] = useState<BatchMessage | null>(null)
   const [form, setForm] = useState({
-    title: '', text_es: '', text_en: '', text_pt: '',
-    sequence_order: '', strip_link_ids: '',
+    title: '', text_es: '', text_en: '', text_pt: '', sequence_order: '',
     image: null as File | null,
   })
+  const [selectedLinkIds, setSelectedLinkIds] = useState<number[]>([])
   const [deleting, setDeleting] = useState<BatchMessage | null>(null)
   const [err, setErr] = useState('')
 
@@ -47,11 +130,11 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
           text_en: form.text_en || undefined,
           text_pt: form.text_pt || undefined,
           sequence_order: form.sequence_order ? Number(form.sequence_order) : undefined,
-          strip_link_ids: form.strip_link_ids || undefined,
+          strip_link_ids: selectedLinkIds.length ? selectedLinkIds.join(',') : undefined,
           image: form.image ?? undefined,
         },
       })
-      setOpen(false); setErr('')
+      setOpen(false); setErr(''); setSelectedLinkIds([])
     } catch (e) { setErr((e as Error).message) }
   }
 
@@ -61,38 +144,51 @@ function BatchMessagesPanel({ batch }: { batch: Batch }) {
     <Box mt="3">
       <Flex align="center" justify="between" mb="2">
         <Text size="2" weight="medium" color="gray">Mensajes ({msgs.length})</Text>
-        <Button size="1" variant="soft" onClick={() => setOpen(true)}><PlusIcon /> Añadir</Button>
+        <Button size="1" variant="soft" onClick={() => { setOpen(true); setErr(''); setSelectedLinkIds([]) }}>
+          <PlusIcon /> Añadir
+        </Button>
       </Flex>
 
       <Flex direction="column" gap="1">
         {msgs.map((m) => (
           <Flex key={m.id} align="center" gap="2" py="1" style={{ borderBottom: '1px solid var(--gray-3)' }}>
             <Badge size="1" color="gray">#{m.sequence_order}</Badge>
-            <Text size="2" style={{ flex: 1 }}>{m.title}</Text>
+            <Text size="2" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</Text>
+            {m.image_url && <Badge size="1" color="blue" variant="soft">img</Badge>}
+            {m.strip_links?.length > 0 && <Badge size="1" color="purple" variant="soft">{m.strip_links.length} links</Badge>}
+            <IconButton size="1" variant="ghost" title="Ver detalle" onClick={() => setViewing(m)}><EyeOpenIcon /></IconButton>
             <IconButton size="1" variant="ghost" color="red" onClick={() => setDeleting(m)}><TrashIcon /></IconButton>
           </Flex>
         ))}
         {msgs.length === 0 && <Text size="2" color="gray">Sin mensajes.</Text>}
       </Flex>
 
+      {/* Detail viewer */}
+      <MessageDetailDialog msg={viewing} open={!!viewing} onOpenChange={(v) => !v && setViewing(null)} />
+
+      {/* Add message dialog */}
       <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Content maxWidth="480px">
+        <Dialog.Content maxWidth="520px">
           <Dialog.Title>Añadir mensaje al lote</Dialog.Title>
           {err && <Callout.Root color="red" mb="2"><Callout.Text>{err}</Callout.Text></Callout.Root>}
-          <Flex direction="column" gap="3" mt="3">
-            <TextField.Root placeholder="Título" value={form.title} onChange={set('title')} />
-            <TextArea placeholder="Texto ES *" rows={3} value={form.text_es} onChange={set('text_es')} />
-            <TextArea placeholder="Texto EN" rows={2} value={form.text_en} onChange={set('text_en')} />
-            <TextArea placeholder="Texto PT" rows={2} value={form.text_pt} onChange={set('text_pt')} />
-            <TextField.Root type="number" placeholder="Orden" value={form.sequence_order} onChange={set('sequence_order')} />
-            <TextField.Root placeholder="IDs links (comma sep)" value={form.strip_link_ids} onChange={set('strip_link_ids')} />
-            <Flex direction="column" gap="1">
-              <Text size="1" color="gray">Links disponibles: {links.map((l) => `${l.id}:${l.name}`).join(', ')}</Text>
+          <ScrollArea style={{ maxHeight: '65vh' }}>
+            <Flex direction="column" gap="3" mt="3" pr="2">
+              <TextField.Root placeholder="Título" value={form.title} onChange={set('title')} />
+              <TextArea placeholder="Texto ES *" rows={4} value={form.text_es} onChange={set('text_es')} />
+              <TextArea placeholder="Texto EN" rows={3} value={form.text_en} onChange={set('text_en')} />
+              <TextArea placeholder="Texto PT" rows={3} value={form.text_pt} onChange={set('text_pt')} />
+              <TextField.Root type="number" placeholder="Orden (opcional)" value={form.sequence_order} onChange={set('sequence_order')} />
+              <Separator size="4" />
+              <LinkCheckboxList links={links} selectedIds={selectedLinkIds} onChange={setSelectedLinkIds} />
+              <Separator size="4" />
+              <Box>
+                <Text size="1" color="gray" weight="medium" mb="1">Imagen (opcional)</Text>
+                <input type="file" accept="image/*"
+                  onChange={(e) => setForm((f) => ({ ...f, image: e.target.files?.[0] ?? null }))}
+                  style={{ fontSize: 13 }} />
+              </Box>
             </Flex>
-            <input type="file" accept="image/*"
-              onChange={(e) => setForm((f) => ({ ...f, image: e.target.files?.[0] ?? null }))}
-              style={{ fontSize: 13 }} />
-          </Flex>
+          </ScrollArea>
           <Flex gap="3" mt="4" justify="end">
             <Dialog.Close><Button variant="soft" color="gray">Cancelar</Button></Dialog.Close>
             <Button onClick={handleAdd} loading={addMsg.isPending}>Añadir</Button>

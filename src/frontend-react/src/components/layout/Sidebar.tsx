@@ -1,14 +1,7 @@
-import { Box, Flex, Text, Separator } from '@radix-ui/themes'
+import { Box, Flex, Text, Separator, IconButton } from '@radix-ui/themes'
 import {
-  LayersIcon,
-  ChatBubbleIcon,
-  Link2Icon,
-  PersonIcon,
-  TimerIcon,
-  FileTextIcon,
-  HeartIcon,
-  GearIcon,
-  LightningBoltIcon,
+  LayersIcon, ChatBubbleIcon, Link2Icon, PersonIcon,
+  TimerIcon, FileTextIcon, HeartIcon, GearIcon, LightningBoltIcon, Cross2Icon,
 } from '@radix-ui/react-icons'
 import { NavLink } from 'react-router-dom'
 import type { ComponentType } from 'react'
@@ -31,12 +24,18 @@ const navItems: NavItem[] = [
   { to: '/configuracion',  label: 'Configuración',     Icon: GearIcon },
 ]
 
-export default function Sidebar() {
+interface Props {
+  onClose?: () => void
+}
+
+export default function Sidebar({ onClose }: Props) {
   return (
     <Box
       style={{
         width: 220,
         minWidth: 220,
+        height: '100%',
+        minHeight: '100vh',
         background: 'var(--color-panel-solid)',
         borderRight: '1px solid var(--gray-4)',
         display: 'flex',
@@ -44,11 +43,16 @@ export default function Sidebar() {
       }}
     >
       {/* Brand */}
-      <Box px="4" py="4">
+      <Flex align="center" justify="between" px="4" py="4">
         <Text size="4" weight="bold" style={{ color: 'var(--accent-9)' }}>
           🌸 Rosa Bot
         </Text>
-      </Box>
+        {onClose && (
+          <IconButton variant="ghost" size="1" onClick={onClose}>
+            <Cross2Icon />
+          </IconButton>
+        )}
+      </Flex>
       <Separator size="4" />
 
       {/* Nav links */}
@@ -57,6 +61,7 @@ export default function Sidebar() {
           <NavLink
             key={to}
             to={to}
+            onClick={onClose}
             style={({ isActive }) => ({
               display: 'flex',
               alignItems: 'center',
