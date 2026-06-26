@@ -1060,6 +1060,12 @@ async def get_schedule_state(
         messages = db.query(Message).filter(Message.batch_id == state.current_batch_id).order_by(Message.sequence_order).all()
         
         current_msg = messages[state.current_message_index] if state.current_message_index < len(messages) else None
+        
+        # Count users that will actually receive this message (non-VIP active users)
+        active_users = db.query(User).filter(
+            User.is_active == True,
+            (User.is_vip == False) | ((User.is_vip == True) & (User.vip_expires_at < datetime.utcnow()))
+        ).count()
 
         return {
             "success": True,
@@ -1075,7 +1081,9 @@ async def get_schedule_state(
                     "title": current_msg.title
                 } if current_msg else None,
                 "last_sent_at": datetime_to_iso_madrid(state.last_sent_at),
-                "next_send_at": datetime_to_iso_madrid(state.next_send_at)
+                "next_send_at": datetime_to_iso_madrid(state.next_send_at),
+                "hours_interval": float(settings.MESSAGE_SENDING_INTERVAL),
+                "active_users": active_users
             }
         }
 

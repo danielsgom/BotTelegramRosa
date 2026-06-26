@@ -422,10 +422,20 @@ async function refreshSchedulerState() {
                 <div class="col-md-6"><strong>Próximo Mensaje:</strong><br>${state.current_message ? state.current_message.title : 'N/A'}</div>
             </div>
             <div class="row mb-3">
-                <div class="col-md-6"><strong>Índice Actual:</strong><br>${state.current_message_index} de ${state.current_batch?.total_messages || 0}</div>
+                <div class="col-md-6"><strong>Mensaje Global #${state.current_message_index + 1}:</strong><br>de ${state.current_batch?.total_messages || 0} totales</div>
+                <div class="col-md-6"><strong>Usuarios Activos:</strong><span class="badge bg-info ms-2">${state.active_users || 0}</span></div>
+            </div>
+            <div class="row mb-3">
                 <div class="col-md-6"><strong>Próximo Envío:</strong><br>${state.next_send_at ? formatDate(state.next_send_at) : 'N/A'}</div>
+                <div class="col-md-6"><strong>Intervalo:</strong><br>${state.hours_interval || 1} hora${(state.hours_interval || 1) > 1 ? 's' : ''}</div>
             </div>
             <div class="alert alert-info">Último envío: ${state.last_sent_at ? formatDate(state.last_sent_at) : 'Nunca'}</div>`;
+        
+        // Update side panel interval
+        const intervalEl = document.getElementById('schedulerInterval');
+        if (intervalEl && state.hours_interval) {
+            intervalEl.textContent = `${state.hours_interval} hora${state.hours_interval > 1 ? 's' : ''}`;
+        }
         const el = document.getElementById('scheduleStateContainer');
         if (el) el.innerHTML = html;
     } catch (error) {
