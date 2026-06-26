@@ -24,6 +24,9 @@
                         <a class="nav-link active" href="#lotes-tab" onclick="switchTab('lotes-tab')">Lotes</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="#mensajes-tab" onclick="switchTab('mensajes-tab')">Mensajes Manuales</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#links-tab" onclick="switchTab('links-tab')">Links de Pago</a>
                     </li>
                     <li class="nav-item">
@@ -67,6 +70,128 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Mensajes Manuales Tab -->
+        <div id="mensajes-tab" class="tab-content d-none">
+            <div class="row h-100" style="max-height: calc(100vh - 200px);">
+                <!-- Users List -->
+                <div class="col-md-3 border-end">
+                    <div class="card h-100 d-flex flex-column">
+                        <div class="card-header">
+                            <h6 class="card-title mb-2">
+                                <i class="bi bi-chat-dots"></i> Usuarios
+                            </h6>
+                            <input type="text" id="userSearchChat" class="form-control form-control-sm" placeholder="Buscar usuario..." oninput="filterUsersForChat()">
+                        </div>
+                        <div class="card-body flex-grow-1 overflow-y-auto p-0">
+                            <div id="usersListChat" class="list-group list-group-flush">
+                                <div class="text-center text-muted p-3">Cargando usuarios...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Chat Area -->
+                <div class="col-md-9">
+                    <div class="card h-100 d-flex flex-column">
+                        <!-- Chat Header -->
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">
+                                    <span id="chatUserName">Selecciona un usuario</span>
+                                </h6>
+                                <small id="chatUserInfo" class="text-muted">telegram_id: --</small>
+                            </div>
+                            <div>
+                                <button class="btn btn-outline-secondary btn-sm" id="assetsPanelBtn" style="display:none;" onclick="toggleAssetsPanel()">
+                                    <i class="bi bi-paperclip"></i> Archivos
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Chat Messages -->
+                        <div class="card-body flex-grow-1 overflow-y-auto" id="chatMessages" style="background-color: #f8f9fa;">
+                            <div class="text-center text-muted mt-5">Selecciona un usuario para ver el historial</div>
+                        </div>
+                        <!-- Message Input -->
+                        <div class="card-footer" id="messageInputArea" style="display:none;">
+                            <div class="input-group mb-2">
+                                <textarea id="messageText" class="form-control" placeholder="Escribe un mensaje..." style="resize: none; height: 80px;"></textarea>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('fileUpload').click()">
+                                    <i class="bi bi-file-earmark"></i> Archivo
+                                </button>
+                                <button class="btn btn-outline-info btn-sm" onclick="showPredefinedAssets('audio')">
+                                    <i class="bi bi-music-note"></i> Audio
+                                </button>
+                                <button class="btn btn-outline-info btn-sm" onclick="showPredefinedAssets('image')">
+                                    <i class="bi bi-image"></i> Imagen
+                                </button>
+                                <button class="btn btn-outline-info btn-sm" onclick="showPredefinedAssets('video')">
+                                    <i class="bi bi-film"></i> Video
+                                </button>
+                                <button class="btn btn-outline-info btn-sm" onclick="showPredefinedAssets('link')">
+                                    <i class="bi bi-link"></i> Link
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" onclick="showStripeLinks()">
+                                    <i class="bi bi-credit-card"></i> Pago
+                                </button>
+                                <button class="btn btn-outline-warning btn-sm" onclick="showQuickMessages()">
+                                    <i class="bi bi-lightning"></i> Rápido
+                                </button>
+                                <button class="btn btn-outline-dark btn-sm" onclick="showMessageBlocks()">
+                                    <i class="bi bi-layers"></i> Bloque
+                                </button>
+                                <button class="btn btn-primary btn-sm ms-auto" onclick="sendManualMessage()">
+                                    <i class="bi bi-send"></i> Enviar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assets Panel Modal -->
+            <div class="modal" id="assetsModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h6 class="modal-title">Seleccionar Archivo Predefinido</h6>
+                            <div class="ms-auto d-flex gap-2">
+                                <button class="btn btn-outline-primary btn-sm" onclick="showAddAssetForm()">
+                                    <i class="bi bi-plus"></i> Nuevo
+                                </button>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                        </div>
+                        <div class="modal-body">
+                            <div id="assetsListContainer">
+                                <div class="text-center text-muted">Cargando archivos...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal para Links de Pago -->
+            <div class="modal" id="linksModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h6 class="modal-title">Seleccionar Link de Pago</h6>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="linksListContainer">
+                                <div class="text-center text-muted">Cargando links...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File Input (Hidden) -->
+            <input type="file" id="fileUpload" style="display:none;" onchange="handleFileUpload(event)">
         </div>
 
         <!-- Links de Pago Tab -->
@@ -509,6 +634,159 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Mensajes Rapidos (Chat) -->
+    <div class="modal" id="quickMessagesModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title">Seleccionar Mensaje Rapido</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="quickMessagesListContainer">
+                        <div class="text-center text-muted">Cargando mensajes...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Crear/Editar Mensaje Rapido (Admin) -->
+    <div class="modal fade" id="createQuickMessageModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Crear Mensaje Rapido</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="quickMessageForm">
+                        <div class="mb-3">
+                            <label class="form-label">Nombre del Mensaje <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="quickMessageName" required placeholder="Ej: Bienvenida VIP">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label"><span class="badge bg-primary me-1">ES</span> Texto en Espanol <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="quickMessageTextEs" rows="3" required placeholder="Texto en espanol..."></textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label"><span class="badge bg-success me-1">EN</span> Text in English <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="quickMessageTextEn" rows="3" required placeholder="Text in English..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><span class="badge bg-secondary me-1">PT</span> Texto em Portugues <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="quickMessageTextPt" rows="3" required placeholder="Texto em portugues..."></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="saveQuickMessage()">Guardar Mensaje</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Crear/Editar Bloque de Mensajes -->
+    <div class="modal fade" id="createBlockModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Crear Bloque de Mensajes</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="blockForm">
+                        <input type="hidden" id="blockEditId" value="">
+                        <div class="mb-3">
+                            <label class="form-label">Nombre del Bloque <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="blockName" required placeholder="Ej: Pack Bienvenida">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Categoria</label>
+                            <input type="text" class="form-control" id="blockCategory" placeholder="Ej: ventas, soporte">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Descripcion</label>
+                            <textarea class="form-control" id="blockDescription" rows="2"></textarea>
+                        </div>
+                        <hr>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0"><i class="bi bi-list-ol"></i> Pasos del bloque</h6>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addBlockStep()">
+                                <i class="bi bi-plus"></i> Anadir paso
+                            </button>
+                        </div>
+                        <div id="blockStepsContainer">
+                            <!-- Steps added dynamically -->
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" onclick="saveMessageBlock()">Guardar Bloque</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para ver pasos del bloque (desde admin) -->
+    <div class="modal" id="viewBlockStepsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" id="viewBlockTitle">Pasos del Bloque</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="viewBlockStepsContainer"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para seleccionar Bloque de Mensajes (Chat) -->
+    <div class="modal" id="messageBlocksModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title">Seleccionar Bloque de Mensajes</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="blocksListContainer">
+                        <div class="text-center text-muted">Cargando bloques...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para ver preview de pasos antes de enviar (Chat) -->
+    <div class="modal" id="blockPreviewModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" id="blockPreviewTitle">Enviar Bloque</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-2">Se enviaran los siguientes mensajes en orden:</p>
+                    <div id="blockPreviewContainer"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" id="confirmSendBlockBtn" onclick="confirmSendBlock()">
+                        <i class="bi bi-send"></i> Enviar Bloque
+                    </button>
                 </div>
             </div>
         </div>
