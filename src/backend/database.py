@@ -240,6 +240,55 @@ class UserMessage(Base):
         return f"<UserMessage {self.id}: user={self.user_id} type={self.message_type}>"
 
 
+class QuickMessage(Base):
+    """Predefined messages for quick sending in 3 languages"""
+    __tablename__ = "quick_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)  # Name/identifier for admin
+    text_es = Column(Text, nullable=False)      # Spanish text
+    text_en = Column(Text, nullable=False)      # English text
+    text_pt = Column(Text, nullable=False)      # Portuguese text
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<QuickMessage {self.id}: {self.name}>"
+
+
+class MessageBlock(Base):
+    """A named block containing multiple ordered message steps (each in 3 languages)"""
+    __tablename__ = "message_blocks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, index=True)  # e.g. "Bienvenida Pack 1"
+    description = Column(Text, nullable=True)
+    category = Column(String(100), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    steps = relationship("MessageBlockStep", back_populates="block",
+                        cascade="all, delete-orphan", order_by="MessageBlockStep.step_order")
+
+    def __repr__(self):
+        return f"<MessageBlock {self.id}: {self.name}>"
+
+
+class MessageBlockStep(Base):
+    """A single step within a MessageBlock (one Telegram message) with ES/EN/PT text"""
+    __tablename__ = "message_block_steps"
+
+    id = Column(Integer, primary_key=True, index=True)
+    block_id = Column(Integer, ForeignKey("message_blocks.id", ondelete="CASCADE"), nullable=False, index=True)
+    step_order = Column(Integer, nullable=False, default=1)  # 1, 2, 3... within a block
+    text_es = Column(Text, nullable=False)
+    text_en = Column(Text, nullable=False)
+    text_pt = Column(Text, nullable=False)
+
+    block = relationship("MessageBlock", back_populates="steps")
+
+    def __repr__(self):
+        return f"<MessageBlockStep {self.id}: block={self.block_id} step={self.step_order}>"
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -258,6 +307,61 @@ def run_migrations():
         ("user_messages", "is_read",            "BOOLEAN DEFAULT 0"),
         ("user_messages", "read_at",            "DATETIME"),
     ]
+    
+    # Create quick_messages table if not exists
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS quick_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(200) NOT NULL,
+                    text_es TEXT NOT NULL,
+                    text_en TEXT NOT NULL,
+                    text_pt TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+            logger.info("[Migration] quick_messages table created or already exists")
+    except Exception as e:
+        logger.warning(f"[Migration] quick_messages table error: {e}")
+    
+    # Create message_blocks table if not exists
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS message_blocks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    category VARCHAR(100),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+            logger.info("[Migration] message_blocks table created or already exists")
+    except Exception as e:
+        logger.warning(f"[Migration] message_blocks table error: {e}")
+    
+    # Create message_block_steps table if not exists
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS message_block_steps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    block_id INTEGER NOT NULL,
+                    step_order INTEGER NOT NULL DEFAULT 1,
+                    text_es TEXT NOT NULL,
+                    text_en TEXT NOT NULL,
+                    text_pt TEXT NOT NULL,
+                    FOREIGN KEY (block_id) REFERENCES message_blocks(id) ON DELETE CASCADE
+                )
+            """))
+            conn.commit()
+            logger.info("[Migration] message_block_steps table created or already exists")
+    except Exception as e:
+        logger.warning(f"[Migration] message_block_steps table error: {e}")
+    
     with engine.connect() as conn:
         for table, col, definition in migrations:
             try:

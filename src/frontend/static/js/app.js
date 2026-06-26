@@ -16,18 +16,19 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(refreshSchedulerState, 60000);
 });
 
-function switchTab(tabId) {
+async function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('d-none'));
     document.querySelectorAll('.navbar-nav .nav-link').forEach(link => link.classList.remove('active'));
     document.getElementById(tabId).classList.remove('d-none');
     document.querySelector(`a[href="#${tabId}"]`).classList.add('active');
-    if (tabId === 'lotes-tab') loadBatches();
-    else if (tabId === 'mensajes-tab') { loadUsersForChat(); loadPredefinedAssets(); }
-    else if (tabId === 'links-tab') loadStripLinks();
-    else if (tabId === 'usuarios-tab') loadUsers();
+    if (tabId === 'lotes-tab') await loadBatches();
+    else if (tabId === 'mensajes-tab') { await loadUsersForChat(); await loadPredefinedAssets(); await loadQuickMessages(); }
+    else if (tabId === 'links-tab') await loadStripLinks();
+    else if (tabId === 'usuarios-tab') await loadUsers();
     else if (tabId === 'scheduler-tab') refreshSchedulerState();
     else if (tabId === 'logs-tab') { loadLogs(); _startLogsAutoRefresh(); }
     else if (tabId === 'vip-tab') loadVipConfig();
+    else if (tabId === 'quick-messages-tab') { await loadQuickMessages(); await loadMessageBlocks(); }
     if (tabId !== 'logs-tab') _stopLogsAutoRefresh();
 }
 
@@ -737,6 +738,7 @@ let currentUserTelegramId = null;
 let allUsersChat = [];
 let allPredefinedAssets = [];
 let allStripeLinks = [];
+let allQuickMessages = [];
 let selectedAssetType = null;
 
 async function loadUsersForChat() {
@@ -761,14 +763,21 @@ function renderUsersList() {
         return;
     }
     
+    const langFlags = {
+        'es': '🇪🇸',
+        'en': '🇬🇧',
+        'pt': '🇵🇹'
+    };
+    
     list.innerHTML = allUsersChat.map(u => `
         <div class="list-group-item list-group-item-action p-2 cursor-pointer" onclick="selectUserForChat(${u.id}, ${u.telegram_id}, '${u.first_name || ''} ${u.last_name || ''}')">
             <div class="d-flex justify-content-between align-items-start">
                 <div style="flex: 1;">
-                    <h6 class="mb-0">
-                        ${u.first_name || u.username || 'User'}
-                        ${u.unread_count > 0 ? `<span class="badge bg-danger ms-2">${u.unread_count}</span>` : ''}
-                    </h6>
+                    <div class="d-flex align-items-center gap-2">
+                        <h6 class="mb-0">${u.first_name || u.username || 'User'}</h6>
+                        <span class="badge bg-info" title="Idioma: ${u.language || 'es'}">${langFlags[u.language] || '🌍'} ${u.language ? u.language.toUpperCase() : 'ES'}</span>
+                        ${u.unread_count > 0 ? `<span class="badge bg-danger">${u.unread_count}</span>` : ''}
+                    </div>
                     <small class="text-muted">@${u.username || u.telegram_id}</small>
                     ${u.last_message_preview ? `<div class="small text-truncate mt-1">${u.last_message_preview}</div>` : ''}
                 </div>
@@ -1102,4 +1111,484 @@ function handleFileUpload(event) {
 
 function toggleAssetsPanel() {
     // Can be expanded for more options later
+}
+
+// ─── Quick Messages Functions ──────────────────────────────────────────────
+
+async function loadQuickMessages() {
+    allQuickMessages = []; // clear first
+    try {
+        const res = await fetch(`${API_BASE}/admin/quick-messages`, {
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!res.ok) throw new Error('Failed to load quick messages');
+        const data = await res.json();
+        allQuickMessages = data.messages || [];
+        console.log(`[QuickMessages] Loaded ${allQuickMessages.length} messages`);
+    } catch (e) {
+        console.error('Error loading quick messages:', e);
+    }
+    // Always render after load attempt, even if empty
+    if (typeof renderQuickMessagesAdmin === 'function') renderQuickMessagesAdmin();
+}
+
+function showQuickMessages() {
+    const modal = new bootstrap.Modal(document.getElementById('quickMessagesModal'));
+    
+    const container = document.getElementById('quickMessagesListContainer');
+    if (!allQuickMessages.length) {
+        container.innerHTML = `<div class="text-center text-muted">No hay mensajes rápidos definidos</div>`;
+    } else {
+        container.innerHTML = `
+            <div class="list-group">
+                ${allQuickMessages.map(msg => `
+                    <div class="list-group-item list-group-item-action p-2" onclick="selectQuickMessage(${msg.id})">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">${msg.name}</h6>
+                            <span class="badge bg-primary">ES</span>
+                        </div>
+                        <small class="text-muted d-block text-truncate">${msg.text_es}</small>
+                        <div class="mt-1">
+                            <small class="text-muted me-2">🇬🇧 ${msg.text_en.substring(0, 40)}...</small>
+                        </div>
+                        <div class="mt-1">
+                            <small class="text-muted">🇵🇹 ${msg.text_pt.substring(0, 40)}...</small>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+    modal.show();
+}
+
+function selectQuickMessage(msgId) {
+    const msg = allQuickMessages.find(m => m.id === msgId);
+    if (!msg || !currentUserId) return;
+    
+    // Get the user's language
+    const user = allUsersChat.find(u => u.id === currentUserId);
+    const lang = user ? user.language : 'es';
+    
+    // Select text based on user language
+    let text;
+    if (lang === 'en') {
+        text = msg.text_en;
+    } else if (lang === 'pt') {
+        text = msg.text_pt;
+    } else {
+        text = msg.text_es; // Default Spanish
+    }
+    
+    // Close modal and set text
+    bootstrap.Modal.getInstance(document.getElementById('quickMessagesModal')).hide();
+    document.getElementById('messageText').value = text;
+    
+    // Auto-send
+    sendManualMessage();
+}
+
+function openCreateQuickMessageModal() {
+    new bootstrap.Modal(document.getElementById('createQuickMessageModal')).show();
+}
+
+async function saveQuickMessage() {
+    const name = document.getElementById('quickMessageName').value;
+    const textEs = document.getElementById('quickMessageTextEs').value;
+    const textEn = document.getElementById('quickMessageTextEn').value;
+    const textPt = document.getElementById('quickMessageTextPt').value;
+    
+    if (!name || !textEs || !textEn || !textPt) {
+        showAlert('Todos los campos son obligatorios', 'warning');
+        return;
+    }
+    
+    const fd = new FormData();
+    fd.append('name', name);
+    fd.append('text_es', textEs);
+    fd.append('text_en', textEn);
+    fd.append('text_pt', textPt);
+    
+    try {
+        const res = await fetch(`${API_BASE}/admin/quick-messages`, {
+            method: 'POST',
+            headers: { 'X-API-Token': apiToken },
+            body: fd
+        });
+        if (!res.ok) throw new Error('Failed');
+        
+        await loadQuickMessages();
+        renderQuickMessagesAdmin();
+        
+        bootstrap.Modal.getInstance(document.getElementById('createQuickMessageModal')).hide();
+        document.getElementById('quickMessageForm').reset();
+        showAlert('Mensaje rápido guardado', 'success');
+    } catch (e) {
+        showAlert('Error al guardar: ' + e.message, 'danger');
+    }
+}
+
+function renderQuickMessagesAdmin() {
+    const container = document.getElementById('quickMessagesContainer');
+    if (!container) return;
+    
+    if (!allQuickMessages.length) {
+        container.innerHTML = '<div class="text-center text-muted">No hay mensajes rápidos definidos. Crea uno nuevo.</div>';
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>🇪🇸 Español</th>
+                        <th>🇬🇧 English</th>
+                        <th>🇵🇹 Português</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${allQuickMessages.map(msg => `
+                        <tr>
+                            <td><strong>${msg.name}</strong></td>
+                            <td><small>${msg.text_es.substring(0, 60)}${msg.text_es.length > 60 ? '...' : ''}</small></td>
+                            <td><small>${msg.text_en.substring(0, 60)}${msg.text_en.length > 60 ? '...' : ''}</small></td>
+                            <td><small>${msg.text_pt.substring(0, 60)}${msg.text_pt.length > 60 ? '...' : ''}</small></td>
+                            <td>
+                                <button class="btn btn-danger btn-sm" onclick="deleteQuickMessage(${msg.id})">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+async function deleteQuickMessage(msgId) {
+    if (!confirm('¿Eliminar este mensaje rápido?')) return;
+    
+    try {
+        const res = await fetch(`${API_BASE}/admin/quick-messages/${msgId}`, {
+            method: 'DELETE',
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!res.ok) throw new Error('Failed');
+        
+        await loadQuickMessages();
+        renderQuickMessagesAdmin();
+        showAlert('Mensaje eliminado', 'success');
+    } catch (e) {
+        showAlert('Error al eliminar: ' + e.message, 'danger');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Message Blocks  (Bloques de Mensajes Multi-Paso + Trilingüe)
+// ═══════════════════════════════════════════════════════════════════
+
+let allMessageBlocks = [];
+let selectedBlockIdToSend = null;
+
+async function loadMessageBlocks() {
+    allMessageBlocks = []; // clear first to avoid stale data
+    try {
+        const res = await fetch(`${API_BASE}/admin/message-blocks`, {
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        allMessageBlocks = data.blocks || [];
+        console.log(`[Blocks] Loaded ${allMessageBlocks.length} blocks`);
+    } catch (e) {
+        console.error('[Blocks] Error loading:', e);
+    }
+    // Always render after load attempt, even if empty
+    if (typeof renderMessageBlocksAdmin === 'function') renderMessageBlocksAdmin();
+}
+
+function renderMessageBlocksAdmin() {
+    const container = document.getElementById('messageBlocksContainer');
+    if (!container) return;
+
+    if (!allMessageBlocks.length) {
+        container.innerHTML = '<div class="text-center text-muted">No hay bloques de mensajes. Crea uno nuevo.</div>';
+        return;
+    }
+
+    container.innerHTML = allMessageBlocks.map(block => {
+        const stepCount = block.steps ? block.steps.length : 0;
+        return `
+            <div class="card mb-3 border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="card-title mb-1">${block.name}</h6>
+                            <small class="text-muted d-block">${block.description || ''}</small>
+                            <div class="mt-1">
+                                <span class="badge bg-info text-dark">${stepCount} paso${stepCount !== 1 ? 's' : ''}</span>
+                                ${block.category ? `<span class="badge bg-secondary ms-1">${block.category}</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-primary" onclick="viewBlockSteps(${block.id})" title="Ver pasos">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteMessageBlock(${block.id})" title="Eliminar">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function openCreateBlockModal() {
+    document.getElementById('blockForm').reset();
+    document.getElementById('blockEditId').value = '';
+    const container = document.getElementById('blockStepsContainer');
+    container.innerHTML = '';
+    // Always start with at least 2 steps
+    addBlockStep();
+    addBlockStep();
+    new bootstrap.Modal(document.getElementById('createBlockModal')).show();
+}
+
+let blockStepCounter = 0;
+
+function addBlockStep() {
+    blockStepCounter++;
+    const container = document.getElementById('blockStepsContainer');
+    const div = document.createElement('div');
+    div.className = 'border rounded p-3 mb-2 step-item';
+    div.dataset.stepId = blockStepCounter;
+    div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold text-muted">Paso <span class="step-number">${container.children.length + 1}</span></span>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.step-item').remove(); reorderBlockSteps();">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+        <div class="mb-2">
+            <label class="form-label small mb-1"><span class="badge bg-primary">ES</span></label>
+            <textarea class="form-control form-control-sm step-text-es" rows="2" required placeholder="Texto en español..."></textarea>
+        </div>
+        <div class="mb-2">
+            <label class="form-label small mb-1"><span class="badge bg-success">EN</span></label>
+            <textarea class="form-control form-control-sm step-text-en" rows="2" required placeholder="Text in English..."></textarea>
+        </div>
+        <div class="mb-0">
+            <label class="form-label small mb-1"><span class="badge bg-secondary">PT</span></label>
+            <textarea class="form-control form-control-sm step-text-pt" rows="2" required placeholder="Texto em português..."></textarea>
+        </div>
+    `;
+    container.appendChild(div);
+    reorderBlockSteps();
+}
+
+function reorderBlockSteps() {
+    const steps = document.querySelectorAll('#blockStepsContainer .step-item');
+    steps.forEach((step, idx) => {
+        step.querySelector('.step-number').textContent = idx + 1;
+    });
+}
+
+async function saveMessageBlock() {
+    const name = document.getElementById('blockName').value.trim();
+    const category = document.getElementById('blockCategory').value.trim() || null;
+    const description = document.getElementById('blockDescription').value.trim() || null;
+
+    if (!name) {
+        showAlert('El nombre del bloque es obligatorio', 'warning');
+        return;
+    }
+
+    const stepElements = document.querySelectorAll('#blockStepsContainer .step-item');
+    if (stepElements.length === 0) {
+        showAlert('Añade al menos un paso al bloque', 'warning');
+        return;
+    }
+
+    const steps = [];
+    for (let i = 0; i < stepElements.length; i++) {
+        const el = stepElements[i];
+        const textEs = el.querySelector('.step-text-es').value.trim();
+        const textEn = el.querySelector('.step-text-en').value.trim();
+        const textPt = el.querySelector('.step-text-pt').value.trim();
+        if (!textEs || !textEn || !textPt) {
+            showAlert(`Completa todos los idiomas en el paso ${i + 1}`, 'warning');
+            return;
+        }
+        steps.push({
+            step_order: i + 1,
+            text_es: textEs,
+            text_en: textEn,
+            text_pt: textPt
+        });
+    }
+
+    const payload = { name, category, description, steps };
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/message-blocks`, {
+            method: 'POST',
+            headers: {
+                'X-API-Token': apiToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('Failed');
+
+        bootstrap.Modal.getInstance(document.getElementById('createBlockModal')).hide();
+        showAlert('Bloque de mensajes guardado', 'success');
+        await loadMessageBlocks();
+        renderMessageBlocksAdmin();
+    } catch (e) {
+        showAlert('Error al guardar: ' + e.message, 'danger');
+    }
+}
+
+async function deleteMessageBlock(blockId) {
+    if (!confirm('¿Eliminar este bloque de mensajes? Se eliminarán también todos sus pasos.')) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/message-blocks/${blockId}`, {
+            method: 'DELETE',
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!res.ok) throw new Error('Failed');
+
+        await loadMessageBlocks();
+        renderMessageBlocksAdmin();
+        showAlert('Bloque eliminado', 'success');
+    } catch (e) {
+        showAlert('Error al eliminar: ' + e.message, 'danger');
+    }
+}
+
+function viewBlockSteps(blockId) {
+    const block = allMessageBlocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    document.getElementById('viewBlockTitle').textContent = `Pasos: ${block.name}`;
+    const container = document.getElementById('viewBlockStepsContainer');
+    container.innerHTML = `
+        <div class="list-group">
+            ${block.steps.map(step => `
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="badge bg-primary">Paso ${step.step_order}</span>
+                    </div>
+                    <div class="mb-1"><span class="badge bg-primary me-1">ES</span> ${step.text_es}</div>
+                    <div class="mb-1"><span class="badge bg-success me-1">EN</span> ${step.text_en}</div>
+                    <div class="mb-0"><span class="badge bg-secondary me-1">PT</span> ${step.text_pt}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    new bootstrap.Modal(document.getElementById('viewBlockStepsModal')).show();
+}
+
+// ─── Chat Integration: Send Message Block ────────────────────────────
+
+function showMessageBlocks() {
+    const modal = new bootstrap.Modal(document.getElementById('messageBlocksModal'));
+    const container = document.getElementById('blocksListContainer');
+
+    if (!allMessageBlocks.length) {
+        container.innerHTML = `<div class="text-center text-muted">No hay bloques definidos</div>`;
+        modal.show();
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="list-group">
+            ${allMessageBlocks.map(block => {
+                const steps = block.steps || [];
+                return `
+                    <div class="list-group-item list-group-item-action p-2" onclick="selectMessageBlock(${block.id})">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">${block.name}</h6>
+                            <span class="badge bg-info text-dark">${steps.length} paso${steps.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <small class="text-muted d-block">${block.description || ''}</small>
+                        <div class="mt-1">
+                            <small class="text-muted">Paso 1: ${steps[0] ? steps[0].text_es.substring(0, 45) : ''}${steps[0] && steps[0].text_es.length > 45 ? '...' : ''}</small>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+    modal.show();
+}
+
+function selectMessageBlock(blockId) {
+    const block = allMessageBlocks.find(b => b.id === blockId);
+    if (!block || !currentUserId) return;
+
+    // Determine user language
+    const user = allUsersChat.find(u => u.id === currentUserId);
+    const lang = user ? (['es','en','pt'].includes(user.language) ? user.language : 'en') : 'es';
+
+    selectedBlockIdToSend = blockId;
+
+    // Close blocks modal and show preview
+    bootstrap.Modal.getInstance(document.getElementById('messageBlocksModal')).hide();
+
+    const previewContainer = document.getElementById('blockPreviewContainer');
+    const steps = block.steps || [];
+    previewContainer.innerHTML = steps.map((step, idx) => {
+        const text = step[`text_${lang}`] || step.text_es;
+        return `
+            <div class="d-flex align-items-start mb-2">
+                <span class="badge bg-primary me-2 mt-1">${idx + 1}</span>
+                <div class="border rounded p-2 bg-light flex-grow-1">
+                    <div class="small">${escapeHtml(text)}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    document.getElementById('blockPreviewTitle').textContent = `Enviar "${block.name}"`;
+    new bootstrap.Modal(document.getElementById('blockPreviewModal')).show();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function confirmSendBlock() {
+    if (!selectedBlockIdToSend || !currentUserId) return;
+
+    const btn = document.getElementById('confirmSendBlockBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Enviando...';
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/message-blocks/${selectedBlockIdToSend}/send/${currentUserId}`, {
+            method: 'POST',
+            headers: { 'X-API-Token': apiToken }
+        });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+
+        bootstrap.Modal.getInstance(document.getElementById('blockPreviewModal')).hide();
+        showAlert(`Bloque enviado: ${data.sent}/${data.total} mensajes`, 'success');
+        await loadChatHistory(currentUserId);
+    } catch (e) {
+        showAlert('Error enviando bloque: ' + e.message, 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send"></i> Enviar Bloque';
+    }
 }

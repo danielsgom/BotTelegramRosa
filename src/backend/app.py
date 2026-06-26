@@ -12,10 +12,12 @@ from datetime import datetime
 import logging
 import os
 import json
+import asyncio
 from typing import List, Optional
+from pydantic import BaseModel
 
 from config import get_settings
-from database import init_db, run_migrations, get_db, User, Message, MessageBatch, BatchScheduleState, MessageSent, Payment, StripLink, VipConfig, UserMessage, PredefinedAsset
+from database import init_db, run_migrations, get_db, User, Message, MessageBatch, BatchScheduleState, MessageSent, Payment, StripLink, VipConfig, UserMessage, PredefinedAsset, QuickMessage, MessageBlock, MessageBlockStep
 from bot import telegram_bot
 from scheduler import message_scheduler
 from stripe_handler import StripeHandler
@@ -1610,10 +1612,8 @@ async def get_user_chat_history(
         # Reverse to show oldest first
         messages.reverse()
         
-        # Log for debugging
-        logger.info(f"Chat history for user {user_id}: {len(messages)} messages found")
-        for m in messages:
-            logger.info(f"  Message {m.id}: sent_by={m.sent_by}, type={m.message_type}, content={m.content[:30] if m.content else 'empty'}")
+        # Avoid logging chat history reads — they clutter manual message logs
+        # logger.debug(f"Chat history for user {user_id}: {len(messages)} messages found")
         
         return {
             "success": True,
@@ -1677,7 +1677,13 @@ async def send_manual_message(
                 buttons = []
                 links_text = []
                 for link in links:
-                    buttons.append({"text": link.name, "url": link.url})
+                    # Append client_reference_id for payment tracking
+                    link_url = link.url
+                    if "?" in link_url:
+                        link_url += f"&client_reference_id={user.telegram_id}"
+                    else:
+                        link_url += f"?client_reference_id={user.telegram_id}"
+                    buttons.append({"text": link.name, "url": link_url})
                     links_text.append(link.name)
                 
                 # Create ONE UserMessage record
@@ -1986,7 +1992,8 @@ async def mark_messages_as_read(
         
         db.commit()
         
-        logger.info(f"Marked {len(unread_messages)} messages as read for user {user_id}")
+        # Mark-read is a view-only action — log at debug level only
+        # logger.debug(f"Marked {len(unread_messages)} messages as read for user {user_id}")
         
         return {
             "success": True,
@@ -1996,6 +2003,292 @@ async def mark_messages_as_read(
         raise
     except Exception as e:
         logger.error(f"Error marking messages as read: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Quick Messages API ────────────────────────────────────────────────────
+
+@app.get("/api/admin/quick-messages")
+async def get_quick_messages(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Get all quick messages"""
+    try:
+        messages = db.query(QuickMessage).order_by(QuickMessage.created_at.desc()).all()
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "text_es": m.text_es,
+                    "text_en": m.text_en,
+                    "text_pt": m.text_pt,
+                    "created_at": m.created_at.isoformat()
+                }
+                for m in messages
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting quick messages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/quick-messages")
+async def create_quick_message(
+    name: str = Form(...),
+    text_es: str = Form(...),
+    text_en: str = Form(...),
+    text_pt: str = Form(...),
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Create a quick message"""
+    try:
+        msg = QuickMessage(name=name, text_es=text_es, text_en=text_en, text_pt=text_pt)
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+        logger.info(f"Quick message created: {msg.id}")
+        return {"success": True, "message_id": msg.id}
+    except Exception as e:
+        logger.error(f"Error creating quick message: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/quick-messages/{msg_id}")
+async def delete_quick_message(
+    msg_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Delete a quick message"""
+    try:
+        msg = db.query(QuickMessage).filter(QuickMessage.id == msg_id).first()
+        if not msg:
+            raise HTTPException(status_code=404, detail="Not found")
+        db.delete(msg)
+        db.commit()
+        logger.info(f"Quick message deleted: {msg_id}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting quick message: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Message Blocks API ────────────────────────────────────────────────────
+
+class BlockStepInput(BaseModel):
+    step_order: int
+    text_es: str
+    text_en: str
+    text_pt: str
+
+class CreateBlockInput(BaseModel):
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    steps: List[BlockStepInput]
+
+
+@app.get("/api/admin/message-blocks")
+async def get_message_blocks(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Get all message blocks with steps"""
+    try:
+        blocks = db.query(MessageBlock).order_by(MessageBlock.created_at.desc()).all()
+        return {
+            "success": True,
+            "blocks": [
+                {
+                    "id": b.id,
+                    "name": b.name,
+                    "description": b.description,
+                    "category": b.category,
+                    "created_at": b.created_at.isoformat(),
+                    "steps": [
+                        {"id": s.id, "step_order": s.step_order, "text_es": s.text_es,
+                         "text_en": s.text_en, "text_pt": s.text_pt}
+                        for s in b.steps
+                    ]
+                }
+                for b in blocks
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting blocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/message-blocks/{block_id}")
+async def get_message_block(
+    block_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Get single block"""
+    block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+    if not block:
+        raise HTTPException(status_code=404, detail="Block not found")
+    return {
+        "success": True,
+        "block": {
+            "id": block.id, "name": block.name, "description": block.description,
+            "category": block.category, "created_at": block.created_at.isoformat(),
+            "steps": [
+                {"id": s.id, "step_order": s.step_order,
+                 "text_es": s.text_es, "text_en": s.text_en, "text_pt": s.text_pt}
+                for s in block.steps
+            ]
+        }
+    }
+
+
+@app.post("/api/admin/message-blocks")
+async def create_message_block(
+    data: CreateBlockInput,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Create message block with steps"""
+    try:
+        if not data.name or not data.steps:
+            raise HTTPException(status_code=400, detail="Name and steps required")
+        block = MessageBlock(name=data.name, description=data.description, category=data.category)
+        db.add(block)
+        db.commit()
+        db.refresh(block)
+        for step_data in data.steps:
+            step = MessageBlockStep(
+                block_id=block.id, step_order=step_data.step_order,
+                text_es=step_data.text_es, text_en=step_data.text_en, text_pt=step_data.text_pt
+            )
+            db.add(step)
+        db.commit()
+        logger.info(f"Block created: {block.id} with {len(data.steps)} steps")
+        return {"success": True, "block_id": block.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating block: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/admin/message-blocks/{block_id}")
+async def update_message_block(
+    block_id: int,
+    data: CreateBlockInput,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Update block (replace steps)"""
+    try:
+        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+        block.name = data.name
+        block.description = data.description
+        block.category = data.category
+        for step in list(block.steps):
+            db.delete(step)
+        for step_data in data.steps:
+            step = MessageBlockStep(
+                block_id=block.id, step_order=step_data.step_order,
+                text_es=step_data.text_es, text_en=step_data.text_en, text_pt=step_data.text_pt
+            )
+            db.add(step)
+        db.commit()
+        db.refresh(block)
+        logger.info(f"Block updated: {block_id}")
+        return {"success": True, "block_id": block.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating block: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/message-blocks/{block_id}")
+async def delete_message_block(
+    block_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Delete block"""
+    try:
+        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+        db.delete(block)
+        db.commit()
+        logger.info(f"Block deleted: {block_id}")
+        return {"success": True, "message": "Block deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting block: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/message-blocks/{block_id}/send/{user_id}")
+async def send_message_block_to_user(
+    block_id: int,
+    user_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db)
+):
+    """Send block to user, one message per step. Each step is saved separately to chat history."""
+    try:
+        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        steps = sorted(block.steps, key=lambda s: s.step_order)
+        if not steps:
+            raise HTTPException(status_code=400, detail="Block has no steps")
+        user_lang = user.language or "es"
+        if user_lang not in ("es", "en", "pt"):
+            user_lang = "en"
+        results = []
+        for step in steps:
+            text = getattr(step, f"text_{user_lang}", step.text_es)
+            # Send via Telegram only (do NOT let bot save history, we handle it here)
+            success = await telegram_bot.send_message_to_user(
+                user_id=user.telegram_id,
+                text=text,
+                db=None,
+                user_db_id=None,
+                message_type="text"
+            )
+            if success:
+                # Save EACH step as an independent UserMessage record
+                user_msg = UserMessage(
+                    user_id=user.id,
+                    content=text,
+                    message_type="text",
+                    sent_by="admin",
+                    status="delivered",
+                    delivered_at=datetime.utcnow()
+                )
+                db.add(user_msg)
+                db.commit()
+            results.append({"step": step.step_order, "success": success})
+            # Small delay to avoid flood limits and ensure ordering
+            await asyncio.sleep(0.4)
+        sent_count = sum(1 for r in results if r["success"])
+        logger.info(f"Block {block_id} to user {user_id}: {sent_count}/{len(steps)} sent and saved")
+        return {"success": True, "sent": sent_count, "total": len(steps), "results": results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending block: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -44,6 +44,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="#configuracion-tab" onclick="switchTab('configuracion-tab')">Configuración</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#quick-messages-tab" onclick="switchTab('quick-messages-tab')">Mensajes Rápidos</a>
+                    </li>
                 </ul>
             </div>
         </div>
@@ -138,6 +141,12 @@
                                 </button>
                                 <button class="btn btn-outline-success btn-sm" onclick="showStripeLinks()">
                                     <i class="bi bi-credit-card"></i> Pago
+                                </button>
+                                <button class="btn btn-outline-warning btn-sm" onclick="showQuickMessages()">
+                                    <i class="bi bi-lightning"></i> Rápido
+                                </button>
+                                <button class="btn btn-outline-dark btn-sm" onclick="showMessageBlocks()">
+                                    <i class="bi bi-layers"></i> Bloque
                                 </button>
                                 <button class="btn btn-primary btn-sm ms-auto" onclick="sendManualMessage()">
                                     <i class="bi bi-send"></i> Enviar
@@ -430,213 +439,409 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- User Detail Modal -->
-    <div class="modal fade" id="userDetailModal" tabindex="-1">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-person-circle me-2"></i><span id="userDetailTitle">Usuario</span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="userDetailBody">
-                    <div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm"></div> Cargando...</div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                    <button type="button" class="btn btn-warning" id="userDetailResumeBtn" style="display:none" onclick="resumeUserSequence()">
-                        <i class="bi bi-play-circle me-1"></i> Reanudar Secuencia
+        <!-- Quick Messages Tab (now both Quick Messages + Message Blocks) -->
+        <div id="quick-messages-tab" class="tab-content d-none">
+            <!-- Quick Messages Section -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-lightning"></i> Mensajes Rápidos
+                    </h5>
+                    <button class="btn btn-success btn-sm" onclick="openCreateQuickMessageModal()">
+                        <i class="bi bi-plus"></i> Nuevo Mensaje Rápido
                     </button>
                 </div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Mensajes predefinidos de un solo paso en 3 idiomas. Se envían individualmente desde el chat.
+                    </p>
+                    <div id="quickMessagesContainer">
+                        <div class="text-center text-muted">Cargando mensajes rápidos...</div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
 
-    <!-- User Messages Modal -->
-    <div class="modal fade" id="userMessagesModal" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-chat-text"></i>
-                        Mensajes enviados a <span id="modalUserName"></span>
+            <!-- Message Blocks Section -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-layers"></i> Bloques de Mensajes
                     </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button class="btn btn-success btn-sm" onclick="openCreateBlockModal()">
+                        <i class="bi bi-plus"></i> Nuevo Bloque
+                    </button>
                 </div>
-                <div class="modal-body p-0" id="userMessagesBody">
-                    <div class="text-center py-4 text-muted">Cargando...</div>
-                </div>
-                <div class="modal-footer">
-                    <small class="text-muted me-auto" id="userMessagesMeta"></small>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Create/Edit Batch Modal -->
-    <div class="modal fade" id="createBatchModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="batchModalTitle">Crear Nuevo Lote</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="batchForm">
-                        <div class="mb-3">
-                            <label class="form-label">Nombre del Lote</label>
-                            <input type="text" class="form-control" id="batchName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Descripción</label>
-                            <textarea class="form-control" id="batchDescription" rows="3"></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Orden de Rotación</label>
-                            <input type="number" class="form-control" id="batchOrder" min="1" required>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="saveBatch()">Guardar Lote</button>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Crea bloques con varios mensajes ordenados. Cada mensaje tiene versiones en ES/EN/PT. 
+                        Al enviar a un usuario, cada paso se manda como mensaje independiente en su idioma.
+                    </p>
+                    <div id="messageBlocksContainer">
+                        <div class="text-center text-muted">Cargando bloques...</div>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Create/Edit Link Modal -->
-    <div class="modal fade" id="createLinkModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="linkModalTitle">Crear Nuevo Link</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="linkForm">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Nombre interno <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="linkName" placeholder="Ej: link-vip-es" required>
-                            <small class="text-muted">Identificador único del link (no visible para usuarios)</small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">URL del Link <span class="text-danger">*</span></label>
-                            <input type="url" class="form-control" id="linkUrl" placeholder="https://pay.stripe.com/..." required>
-                        </div>
-                        <hr>
-                        <p class="text-muted small mb-2"><i class="bi bi-translate"></i> Texto del botón por idioma:</p>
-                        <div class="mb-2">
-                            <label class="form-label mb-1"><span class="badge bg-primary me-1">ES</span> Español <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control form-control-sm" id="linkNameEs" placeholder="Ej: Acceso VIP" required>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label mb-1"><span class="badge bg-success me-1">EN</span> English</label>
-                            <input type="text" class="form-control form-control-sm" id="linkNameEn" placeholder="Eg: VIP Access">
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label mb-1"><span class="badge bg-secondary me-1">PT</span> Português</label>
-                            <input type="text" class="form-control form-control-sm" id="linkNamePt" placeholder="Ex: Acesso VIP">
-                        </div>
-                        <hr>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold"><i class="bi bi-clock-history me-1"></i> Duración del acceso (días)</label>
-                            <input type="number" class="form-control" id="linkDurationDays" value="0" min="0" placeholder="0">
-                            <small class="text-muted">0 = acceso vitalicio sin caducidad. >0 = días que dura el acceso VIP tras el pago.</small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold"><i class="bi bi-stripe me-1"></i> ID Stripe del link <span class="text-muted fw-normal">(plink_...)</span></label>
-                            <input type="text" class="form-control font-monospace" id="linkStripeId" placeholder="plink_1Tl3HHP7kx71w90VwGJkdRfX">
-                            <small class="text-muted">Cópialo desde Stripe Dashboard → Payment Links. Se usa para identificar qué producto compró el usuario en el webhook.</small>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="saveLink()">Guardar Link</button>
+        <!-- User Detail Modal -->
+        <div class="modal fade" id="userDetailModal" tabindex="-1">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-person-circle me-2"></i><span id="userDetailTitle">Usuario</span></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body" id="userDetailBody">
+                        <div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm"></div> Cargando...</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                        <button type="button" class="btn btn-warning" id="userDetailResumeBtn" style="display:none" onclick="resumeUserSequence()">
+                            <i class="bi bi-play-circle me-1"></i> Reanudar Secuencia
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Create/Edit Message Modal -->
-    <div class="modal fade" id="createMessageModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="messageModalTitle">Agregar Mensaje al Lote</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <!-- User Messages Modal -->
+        <div class="modal fade" id="userMessagesModal" tabindex="-1">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <i class="bi bi-chat-text"></i>
+                            Mensajes enviados a <span id="modalUserName"></span>
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-0" id="userMessagesBody">
+                        <div class="text-center py-4 text-muted">Cargando...</div>
+                    </div>
+                    <div class="modal-footer">
+                        <small class="text-muted me-auto" id="userMessagesMeta"></small>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <form id="messageForm">
-                        <div class="row mb-3">
-                            <div class="col-md-8">
-                                <label class="form-label">Título del Mensaje <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="messageTitle" required>
+            </div>
+        </div>
+
+        <!-- Create/Edit Batch Modal -->
+        <div class="modal fade" id="createBatchModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="batchModalTitle">Crear Nuevo Lote</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="batchForm">
+                            <div class="mb-3">
+                                <label class="form-label">Nombre del Lote</label>
+                                <input type="text" class="form-control" id="batchName" required>
                             </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Orden en el Lote <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control" id="messageSequenceOrder" min="1" required>
+                            <div class="mb-3">
+                                <label class="form-label">Descripción</label>
+                                <textarea class="form-control" id="batchDescription" rows="3"></textarea>
                             </div>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label"><span class="badge bg-primary me-1">ES</span> Texto en Español <span class="text-danger">*</span></label>
-                            <textarea class="form-control" id="messageTextEs" rows="3" required placeholder="Texto en español..."></textarea>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label"><span class="badge bg-success me-1">EN</span> Text in English</label>
-                            <textarea class="form-control" id="messageTextEn" rows="3" placeholder="Text in English..."></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label"><span class="badge bg-secondary me-1">PT</span> Texto em Português</label>
-                            <textarea class="form-control" id="messageTextPt" rows="3" placeholder="Texto em português..."></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Imagen</label>
-                            <div id="messageImagePreview" class="mb-2" style="display:none">
-                                <img src="" alt="Imagen actual" class="img-thumbnail" style="max-height:180px">
-                                <div class="form-text">Imagen actual. Sube una nueva para reemplazarla.</div>
+                            <div class="mb-3">
+                                <label class="form-label">Orden de Rotación</label>
+                                <input type="number" class="form-control" id="batchOrder" min="1" required>
                             </div>
-                            <input type="file" class="form-control" id="messageImage" accept="image/*">
-                            <small class="text-muted">Formatos: JPG, PNG, GIF, WebP</small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Links de Pago</label>
-                            <div id="stripLinksCheckboxes" class="border p-3 rounded" style="max-height: 200px; overflow-y: auto;">
-                                <small class="text-muted d-block mb-2">Cargando links disponibles...</small>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" onclick="saveMessage()">Guardar Mensaje</button>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="saveBatch()">Guardar Lote</button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- View Batch Modal -->
-    <div class="modal fade" id="viewBatchModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="batchViewTitle">Detalles del Lote</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="batchViewContent"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <!-- Create/Edit Link Modal -->
+        <div class="modal fade" id="createLinkModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="linkModalTitle">Crear Nuevo Link</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="linkForm">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Nombre interno <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="linkName" placeholder="Ej: link-vip-es" required>
+                                <small class="text-muted">Identificador único del link (no visible para usuarios)</small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">URL del Link <span class="text-danger">*</span></label>
+                                <input type="url" class="form-control" id="linkUrl" placeholder="https://pay.stripe.com/..." required>
+                            </div>
+                            <hr>
+                            <p class="text-muted small mb-2"><i class="bi bi-translate"></i> Texto del botón por idioma:</p>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-primary me-1">ES</span> Español <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" id="linkNameEs" placeholder="Ej: Acceso VIP" required>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-success me-1">EN</span> English</label>
+                                <input type="text" class="form-control form-control-sm" id="linkNameEn" placeholder="Eg: VIP Access">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label mb-1"><span class="badge bg-secondary me-1">PT</span> Português</label>
+                                <input type="text" class="form-control form-control-sm" id="linkNamePt" placeholder="Ex: Acesso VIP">
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold"><i class="bi bi-clock-history me-1"></i> Duración del acceso (días)</label>
+                                <input type="number" class="form-control" id="linkDurationDays" value="0" min="0" placeholder="0">
+                                <small class="text-muted">0 = acceso vitalicio sin caducidad. >0 = días que dura el acceso VIP tras el pago.</small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold"><i class="bi bi-stripe me-1"></i> ID Stripe del link <span class="text-muted fw-normal">(plink_...)</span></label>
+                                <input type="text" class="form-control font-monospace" id="linkStripeId" placeholder="plink_1Tl3HHP7kx71w90VwGJkdRfX">
+                                <small class="text-muted">Cópialo desde Stripe Dashboard → Payment Links. Se usa para identificar qué producto compró el usuario en el webhook.</small>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="saveLink()">Guardar Link</button>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="static/js/app.js"></script>
-</body>
+        <!-- Create/Edit Message Modal -->
+        <div class="modal fade" id="createMessageModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="messageModalTitle">Agregar Mensaje al Lote</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="messageForm">
+                            <div class="row mb-3">
+                                <div class="col-md-8">
+                                    <label class="form-label">Título del Mensaje <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="messageTitle" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Orden en el Lote <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" id="messageSequenceOrder" min="1" required>
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label"><span class="badge bg-primary me-1">ES</span> Texto en Español <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="messageTextEs" rows="3" required placeholder="Texto en español..."></textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label"><span class="badge bg-success me-1">EN</span> Text in English</label>
+                                <textarea class="form-control" id="messageTextEn" rows="3" placeholder="Text in English..."></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label"><span class="badge bg-secondary me-1">PT</span> Texto em Português</label>
+                                <textarea class="form-control" id="messageTextPt" rows="3" placeholder="Texto em português..."></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Imagen</label>
+                                <div id="messageImagePreview" class="mb-2" style="display:none">
+                                    <img src="" alt="Imagen actual" class="img-thumbnail" style="max-height:180px">
+                                    <div class="form-text">Imagen actual. Sube una nueva para reemplazarla.</div>
+                                </div>
+                                <input type="file" class="form-control" id="messageImage" accept="image/*">
+                                <small class="text-muted">Formatos: JPG, PNG, GIF, WebP</small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Links de Pago</label>
+                                <div id="stripLinksCheckboxes" class="border p-3 rounded" style="max-height: 200px; overflow-y: auto;">
+                                    <small class="text-muted d-block mb-2">Cargando links disponibles...</small>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="saveMessage()">Guardar Mensaje</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- View Batch Modal -->
+        <div class="modal fade" id="viewBatchModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="batchViewTitle">Detalles del Lote</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="batchViewContent"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Mensajes Rápidos (Chat) -->
+        <div class="modal" id="quickMessagesModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title">Seleccionar Mensaje Rápido</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="quickMessagesListContainer">
+                            <div class="text-center text-muted">Cargando mensajes...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Crear/Editar Mensaje Rápido (Admin) -->
+        <div class="modal fade" id="createQuickMessageModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Crear Mensaje Rápido</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="quickMessageForm">
+                            <div class="mb-3">
+                                <label class="form-label">Nombre del Mensaje <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="quickMessageName" required placeholder="Ej: Bienvenida VIP">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label"><span class="badge bg-primary me-1">ES</span> Texto en Español <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="quickMessageTextEs" rows="3" required placeholder="Texto en español..."></textarea>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label"><span class="badge bg-success me-1">EN</span> Text in English <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="quickMessageTextEn" rows="3" required placeholder="Text in English..."></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label"><span class="badge bg-secondary me-1">PT</span> Texto em Português <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="quickMessageTextPt" rows="3" required placeholder="Texto em português..."></textarea>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="saveQuickMessage()">Guardar Mensaje</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Crear/Editar Bloque de Mensajes -->
+        <div class="modal fade" id="createBlockModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Crear Bloque de Mensajes</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="blockForm">
+                            <input type="hidden" id="blockEditId" value="">
+                            <div class="mb-3">
+                                <label class="form-label">Nombre del Bloque <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="blockName" required placeholder="Ej: Pack Bienvenida">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Categoría</label>
+                                <input type="text" class="form-control" id="blockCategory" placeholder="Ej: ventas, soporte">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Descripción</label>
+                                <textarea class="form-control" id="blockDescription" rows="2"></textarea>
+                            </div>
+                            <hr>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0"><i class="bi bi-list-ol"></i> Pasos del bloque</h6>
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addBlockStep()">
+                                    <i class="bi bi-plus"></i> Añadir paso
+                                </button>
+                            </div>
+                            <div id="blockStepsContainer">
+                                <!-- Steps added dynamically -->
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary" onclick="saveMessageBlock()">Guardar Bloque</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para ver pasos del bloque (desde admin) -->
+        <div class="modal" id="viewBlockStepsModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title" id="viewBlockTitle">Pasos del Bloque</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="viewBlockStepsContainer"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para seleccionar Bloque de Mensajes (Chat) -->
+        <div class="modal" id="messageBlocksModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title">Seleccionar Bloque de Mensajes</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="blocksListContainer">
+                            <div class="text-center text-muted">Cargando bloques...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para ver preview de pasos antes de enviar (Chat) -->
+        <div class="modal" id="blockPreviewModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title" id="blockPreviewTitle">Enviar Bloque</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted small mb-2">Se enviarán los siguientes mensajes en orden:</p>
+                        <div id="blockPreviewContainer"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-success" id="confirmSendBlockBtn" onclick="confirmSendBlock()">
+                            <i class="bi bi-send"></i> Enviar Bloque
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="static/js/app.js"></script>
+    </body>
 </html>
