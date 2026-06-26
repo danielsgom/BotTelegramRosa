@@ -244,8 +244,8 @@ async def get_messages(
                     "text": m.text[:100] + "..." if len(m.text) > 100 else m.text,
                     "is_active": m.is_active,
                     "hours_interval": m.hours_interval,
-                    "created_at": m.created_at.isoformat(),
-                    "last_sent_at": m.last_sent_at.isoformat() if m.last_sent_at else None,
+                    "created_at": datetime_to_iso_madrid(m.created_at),
+                    "last_sent_at": datetime_to_iso_madrid(m.last_sent_at),
                     "image_url": m.image_url
                 }
                 for m in messages
@@ -280,8 +280,8 @@ async def get_message(
                 "stripe_links": json.loads(message.stripe_links),
                 "hours_interval": message.hours_interval,
                 "is_active": message.is_active,
-                "created_at": message.created_at.isoformat(),
-                "last_sent_at": message.last_sent_at.isoformat() if message.last_sent_at else None
+                "created_at": datetime_to_iso_madrid(message.created_at),
+                "last_sent_at": datetime_to_iso_madrid(message.last_sent_at)
             }
         }
 
@@ -441,7 +441,7 @@ async def get_stripe_links(
                     "duration_days": link.duration_days or 0,
                     "stripe_link_id": link.stripe_link_id or "",
                     "name_translations": json.loads(link.name_translations) if link.name_translations else {},
-                    "created_at": link.created_at.isoformat() if link.created_at else None
+                    "created_at": datetime_to_iso_madrid(link.created_at)
                 }
                 for link in links
             ]
@@ -642,7 +642,7 @@ async def get_batches(
                 "order": batch.order,
                 "is_active": batch.is_active,
                 "message_count": len(messages),
-                "created_at": batch.created_at.isoformat(),
+                "created_at": datetime_to_iso_madrid(batch.created_at),
                 "messages": [
                     {
                         "id": msg.id,
@@ -859,7 +859,7 @@ async def get_batch_messages(
                         for link in msg.strip_links
                     ],
                     "sequence_order": msg.sequence_order,
-                    "created_at": msg.created_at.isoformat() if msg.created_at else None
+                    "created_at": datetime_to_iso_madrid(msg.created_at)
                 }
                 for msg in messages
             ]
@@ -1074,8 +1074,8 @@ async def get_schedule_state(
                     "id": current_msg.id,
                     "title": current_msg.title
                 } if current_msg else None,
-                "last_sent_at": state.last_sent_at.isoformat() if state.last_sent_at else None,
-                "next_send_at": state.next_send_at.isoformat() if state.next_send_at else None
+                "last_sent_at": datetime_to_iso_madrid(state.last_sent_at),
+                "next_send_at": datetime_to_iso_madrid(state.next_send_at)
             }
         }
 
@@ -1113,19 +1113,19 @@ async def get_users(
                 "language": u.language or "es",
                 "is_active": u.is_active,
                 "is_vip": u.is_vip,
-                "vip_expires_at": u.vip_expires_at.isoformat() if u.vip_expires_at else None,
+                "vip_expires_at": datetime_to_iso_madrid(u.vip_expires_at),
                 "vip_days_remaining": (
                     max(0, (u.vip_expires_at - datetime.utcnow()).days)
                     if u.is_vip and u.vip_expires_at else
                     (-1 if u.is_vip else 0)  # -1 = lifetime VIP
                 ),
-                "vip_message_sent_at": u.vip_message_sent_at.isoformat() if u.vip_message_sent_at else None,
+                "vip_message_sent_at": datetime_to_iso_madrid(u.vip_message_sent_at),
                 "current_batch_id": u.current_batch_id,
                 "current_batch_name": batch_name,
                 "current_message_step": u.current_message_step or 0,
                 "messages_sent_count": messages_sent,
-                "joined_at": u.joined_at.isoformat() if u.joined_at else None,
-                "last_message_at": u.last_message_at.isoformat() if u.last_message_at else None,
+                "joined_at": datetime_to_iso_madrid(u.joined_at),
+                "last_message_at": datetime_to_iso_madrid(u.last_message_at),
             })
 
         return {"success": True, "count": len(result), "users": result}
@@ -1186,9 +1186,9 @@ async def get_user(
                 "language": user.language,
                 "is_active": user.is_active,
                 "is_vip": user.is_vip,
-                "vip_expires_at": user.vip_expires_at.isoformat() if user.vip_expires_at else None,
-                "joined_at": user.joined_at.isoformat(),
-                "last_message_at": user.last_message_at.isoformat(),
+                "vip_expires_at": datetime_to_iso_madrid(user.vip_expires_at),
+                "joined_at": datetime_to_iso_madrid(user.joined_at),
+                "last_message_at": datetime_to_iso_madrid(user.last_message_at),
                 "payments_count": len(payments)
             }
         }
@@ -1576,8 +1576,8 @@ async def get_users_for_messaging(
                 "is_vip": u.is_vip,
                 "unread_count": unread_count,
                 "last_message_preview": last_message_preview,
-                "joined_at": u.joined_at.isoformat(),
-                "last_message_at": u.last_message_at.isoformat()
+                "joined_at": datetime_to_iso_madrid(u.joined_at),
+                "last_message_at": datetime_to_iso_madrid(u.last_message_at)
             })
         
         return {
@@ -1634,8 +1634,8 @@ async def get_user_chat_history(
                     "attachment_url": m.attachment_url,
                     "status": m.status,
                     "is_read": m.is_read,
-                    "created_at": m.created_at.isoformat(),
-                    "delivered_at": m.delivered_at.isoformat() if m.delivered_at else None
+                    "created_at": datetime_to_iso_madrid(m.created_at),
+                    "delivered_at": datetime_to_iso_madrid(m.delivered_at)
                 }
                 for m in messages
             ]
@@ -1842,7 +1842,7 @@ async def get_predefined_assets(
                     "link_url": a.link_url,
                     "category": a.category,
                     "description": a.description,
-                    "created_at": a.created_at.isoformat()
+                    "created_at": datetime_to_iso_madrid(a.created_at)
                 }
                 for a in assets
             ]
@@ -1957,7 +1957,7 @@ async def get_admin_stripe_links(
                     "language": link.language,
                     "duration_days": link.duration_days or 0,
                     "stripe_link_id": link.stripe_link_id or "",
-                    "created_at": link.created_at.isoformat()
+                    "created_at": datetime_to_iso_madrid(link.created_at)
                 }
                 for link in links
             ]
@@ -2025,7 +2025,7 @@ async def get_quick_messages(
                     "text_es": m.text_es,
                     "text_en": m.text_en,
                     "text_pt": m.text_pt,
-                    "created_at": m.created_at.isoformat()
+                    "created_at": datetime_to_iso_madrid(m.created_at)
                 }
                 for m in messages
             ]
@@ -2110,7 +2110,7 @@ async def get_message_blocks(
                     "name": b.name,
                     "description": b.description,
                     "category": b.category,
-                    "created_at": b.created_at.isoformat(),
+                    "created_at": datetime_to_iso_madrid(b.created_at),
                     "steps": [
                         {"id": s.id, "step_order": s.step_order, "text_es": s.text_es,
                          "text_en": s.text_en, "text_pt": s.text_pt}
@@ -2139,7 +2139,7 @@ async def get_message_block(
         "success": True,
         "block": {
             "id": block.id, "name": block.name, "description": block.description,
-            "category": block.category, "created_at": block.created_at.isoformat(),
+            "category": block.category, "created_at": datetime_to_iso_madrid(block.created_at),
             "steps": [
                 {"id": s.id, "step_order": s.step_order,
                  "text_es": s.text_es, "text_en": s.text_en, "text_pt": s.text_pt}

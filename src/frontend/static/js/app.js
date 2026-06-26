@@ -423,9 +423,9 @@ async function refreshSchedulerState() {
             </div>
             <div class="row mb-3">
                 <div class="col-md-6"><strong>Índice Actual:</strong><br>${state.current_message_index} de ${state.current_batch?.total_messages || 0}</div>
-                <div class="col-md-6"><strong>Próximo Envío:</strong><br>${state.next_send_at ? new Date(state.next_send_at).toLocaleString('es-ES') : 'N/A'}</div>
+                <div class="col-md-6"><strong>Próximo Envío:</strong><br>${state.next_send_at ? formatDate(state.next_send_at) : 'N/A'}</div>
             </div>
-            <div class="alert alert-info">Último envío: ${state.last_sent_at ? new Date(state.last_sent_at).toLocaleString('es-ES') : 'Nunca'}</div>`;
+            <div class="alert alert-info">Último envío: ${state.last_sent_at ? formatDate(state.last_sent_at) : 'Nunca'}</div>`;
         const el = document.getElementById('scheduleStateContainer');
         if (el) el.innerHTML = html;
     } catch (error) {
@@ -871,7 +871,7 @@ function renderChatHistory(messages) {
             }
         }
         
-        const time = new Date(m.created_at).toLocaleTimeString('es-ES');
+        const time = formatTime(m.created_at);
         const status = m.status === 'delivered' ? '✓✓' : (m.status === 'sent' ? '✓' : '✗');
         
         // Show unread indicator for user messages
