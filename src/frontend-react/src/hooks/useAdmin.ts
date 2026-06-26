@@ -24,7 +24,8 @@ export const useAdminUsers = (params?: { search?: string; unread?: boolean }) =>
   useQuery({
     queryKey: ['admin-users', params],
     queryFn: () => fetchAdminUsers(params),
-    refetchInterval: 8_000,
+    refetchInterval: 4_000,
+    refetchIntervalInBackground: true,
   })
 
 export const useChatHistory = (userId: number) =>

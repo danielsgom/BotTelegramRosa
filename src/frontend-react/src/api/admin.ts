@@ -29,10 +29,10 @@ export const sendAdminMessage = (
   },
 ) => {
   const fd = new FormData()
-  if (data.message) fd.append('message', data.message)
+  if (data.message) fd.append('content', data.message)
   if (data.strip_link_ids) fd.append('strip_link_ids', data.strip_link_ids)
-  if (data.asset_id) fd.append('asset_id', String(data.asset_id))
-  if (data.file) fd.append('file', data.file)
+  if (data.asset_id) fd.append('predefined_asset_id', String(data.asset_id))
+  if (data.file) fd.append('attachment', data.file)
   return apiFetch(`/api/admin/users/${userId}/chat/message`, { method: 'POST', body: fd })
 }
 

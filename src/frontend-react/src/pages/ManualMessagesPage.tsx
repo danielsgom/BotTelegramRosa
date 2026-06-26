@@ -60,6 +60,9 @@ function Bubble({ msg }: { msg: ChatMessage }) {
         {msg.type === 'stripe_links' && msg.content && (
           <Text size="2">🔗 {msg.content}</Text>
         )}
+        {msg.type === 'link' && msg.content && (
+          <Text size="2">🔗 {msg.content}</Text>
+        )}
         <Text size="1" style={{ opacity: 0.65, marginTop: 4, display: 'block', textAlign: 'right' }}>
           {timeStr(msg.created_at)}
         </Text>

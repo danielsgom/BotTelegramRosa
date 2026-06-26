@@ -21,6 +21,8 @@ export const mockUser: User = {
   vip_expires_at: null, vip_days_remaining: 0, vip_message_sent_at: null,
   current_batch_id: 1, current_batch_name: 'Lote 1', current_message_step: 0,
   messages_sent_count: 5, joined_at: '2024-01-01T00:00:00', last_message_at: '2024-06-01T00:00:00',
+  send_error: null,
+  send_error_at: null
 }
 
 export const mockScheduleState: ScheduleState = {

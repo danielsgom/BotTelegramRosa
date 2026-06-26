@@ -12,12 +12,10 @@ from datetime import datetime
 import logging
 import os
 import json
-import asyncio
 from typing import List, Optional
-from pydantic import BaseModel
 
 from config import get_settings
-from database import init_db, run_migrations, get_db, User, Message, MessageBatch, BatchScheduleState, MessageSent, Payment, StripLink, VipConfig, UserMessage, PredefinedAsset, QuickMessage, MessageBlock, MessageBlockStep
+from database import init_db, run_migrations, get_db, User, Message, MessageBatch, BatchScheduleState, MessageSent, Payment, StripLink, VipConfig
 from bot import telegram_bot
 from scheduler import message_scheduler
 from stripe_handler import StripeHandler
@@ -92,23 +90,6 @@ def verify_api_token(request: Request) -> str:
             detail="Invalid or missing API token"
         )
     return token
-
-
-def get_full_file_url(file_path: str) -> str:
-    """Convert relative file path to full HTTP URL"""
-    if not file_path:
-        return file_path
-    
-    # If it's already a full URL, return as is
-    if file_path.startswith("http://") or file_path.startswith("https://"):
-        return file_path
-    
-    # If it's a relative path (e.g., /uploads/file.mp3), convert to full URL
-    if file_path.startswith("/"):
-        return f"{settings.SERVER_URL}{file_path}"
-    
-    # Otherwise, prepend uploads and convert
-    return f"{settings.SERVER_URL}/uploads/{file_path}"
 
 
 # ─── Health Check ───────────────────────────────────────────────────────────
@@ -244,8 +225,8 @@ async def get_messages(
                     "text": m.text[:100] + "..." if len(m.text) > 100 else m.text,
                     "is_active": m.is_active,
                     "hours_interval": m.hours_interval,
-                    "created_at": datetime_to_iso_madrid(m.created_at),
-                    "last_sent_at": datetime_to_iso_madrid(m.last_sent_at),
+                    "created_at": m.created_at.isoformat(),
+                    "last_sent_at": m.last_sent_at.isoformat() if m.last_sent_at else None,
                     "image_url": m.image_url
                 }
                 for m in messages
@@ -280,8 +261,8 @@ async def get_message(
                 "stripe_links": json.loads(message.stripe_links),
                 "hours_interval": message.hours_interval,
                 "is_active": message.is_active,
-                "created_at": datetime_to_iso_madrid(message.created_at),
-                "last_sent_at": datetime_to_iso_madrid(message.last_sent_at)
+                "created_at": message.created_at.isoformat(),
+                "last_sent_at": message.last_sent_at.isoformat() if message.last_sent_at else None
             }
         }
 
@@ -441,7 +422,7 @@ async def get_stripe_links(
                     "duration_days": link.duration_days or 0,
                     "stripe_link_id": link.stripe_link_id or "",
                     "name_translations": json.loads(link.name_translations) if link.name_translations else {},
-                    "created_at": datetime_to_iso_madrid(link.created_at)
+                    "created_at": link.created_at.isoformat() if link.created_at else None
                 }
                 for link in links
             ]
@@ -642,7 +623,7 @@ async def get_batches(
                 "order": batch.order,
                 "is_active": batch.is_active,
                 "message_count": len(messages),
-                "created_at": datetime_to_iso_madrid(batch.created_at),
+                "created_at": batch.created_at.isoformat(),
                 "messages": [
                     {
                         "id": msg.id,
@@ -859,7 +840,7 @@ async def get_batch_messages(
                         for link in msg.strip_links
                     ],
                     "sequence_order": msg.sequence_order,
-                    "created_at": datetime_to_iso_madrid(msg.created_at)
+                    "created_at": msg.created_at.isoformat() if msg.created_at else None
                 }
                 for msg in messages
             ]
@@ -1060,12 +1041,6 @@ async def get_schedule_state(
         messages = db.query(Message).filter(Message.batch_id == state.current_batch_id).order_by(Message.sequence_order).all()
         
         current_msg = messages[state.current_message_index] if state.current_message_index < len(messages) else None
-        
-        # Count users that will actually receive this message (non-VIP active users)
-        active_users = db.query(User).filter(
-            User.is_active == True,
-            (User.is_vip == False) | ((User.is_vip == True) & (User.vip_expires_at < datetime.utcnow()))
-        ).count()
 
         return {
             "success": True,
@@ -1080,10 +1055,8 @@ async def get_schedule_state(
                     "id": current_msg.id,
                     "title": current_msg.title
                 } if current_msg else None,
-                "last_sent_at": datetime_to_iso_madrid(state.last_sent_at),
-                "next_send_at": datetime_to_iso_madrid(state.next_send_at),
-                "hours_interval": float(settings.MESSAGE_SENDING_INTERVAL),
-                "active_users": active_users
+                "last_sent_at": state.last_sent_at.isoformat() if state.last_sent_at else None,
+                "next_send_at": state.next_send_at.isoformat() if state.next_send_at else None
             }
         }
 
@@ -1121,19 +1094,19 @@ async def get_users(
                 "language": u.language or "es",
                 "is_active": u.is_active,
                 "is_vip": u.is_vip,
-                "vip_expires_at": datetime_to_iso_madrid(u.vip_expires_at),
+                "vip_expires_at": u.vip_expires_at.isoformat() if u.vip_expires_at else None,
                 "vip_days_remaining": (
                     max(0, (u.vip_expires_at - datetime.utcnow()).days)
                     if u.is_vip and u.vip_expires_at else
                     (-1 if u.is_vip else 0)  # -1 = lifetime VIP
                 ),
-                "vip_message_sent_at": datetime_to_iso_madrid(u.vip_message_sent_at),
+                "vip_message_sent_at": u.vip_message_sent_at.isoformat() if u.vip_message_sent_at else None,
                 "current_batch_id": u.current_batch_id,
                 "current_batch_name": batch_name,
                 "current_message_step": u.current_message_step or 0,
                 "messages_sent_count": messages_sent,
-                "joined_at": datetime_to_iso_madrid(u.joined_at),
-                "last_message_at": datetime_to_iso_madrid(u.last_message_at),
+                "joined_at": u.joined_at.isoformat() if u.joined_at else None,
+                "last_message_at": u.last_message_at.isoformat() if u.last_message_at else None,
             })
 
         return {"success": True, "count": len(result), "users": result}
@@ -1194,9 +1167,9 @@ async def get_user(
                 "language": user.language,
                 "is_active": user.is_active,
                 "is_vip": user.is_vip,
-                "vip_expires_at": datetime_to_iso_madrid(user.vip_expires_at),
-                "joined_at": datetime_to_iso_madrid(user.joined_at),
-                "last_message_at": datetime_to_iso_madrid(user.last_message_at),
+                "vip_expires_at": user.vip_expires_at.isoformat() if user.vip_expires_at else None,
+                "joined_at": user.joined_at.isoformat(),
+                "last_message_at": user.last_message_at.isoformat(),
                 "payments_count": len(payments)
             }
         }
@@ -1524,779 +1497,6 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error handling webhook: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ─── Manual Messaging API (Admin Dashboard) ──────────────────────────────────
-# Allow admins to manually message users and manage predefined assets
-
-@app.get("/api/admin/users")
-async def get_users_for_messaging(
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 50,
-    search: Optional[str] = None
-):
-    """Get list of users for manual messaging"""
-    try:
-        query = db.query(User).order_by(User.last_message_at.desc())
-        
-        if search:
-            search_term = f"%{search}%"
-            query = query.filter(
-                (User.username.like(search_term)) |
-                (User.first_name.like(search_term)) |
-                (User.last_name.like(search_term))
-            )
-        
-        total = query.count()
-        users = query.offset(skip).limit(limit).all()
-        
-        result = []
-        for u in users:
-            # Count unread messages from this user
-            unread_count = db.query(UserMessage).filter(
-                UserMessage.user_id == u.id,
-                UserMessage.sent_by == "user",
-                UserMessage.is_read == False
-            ).count()
-            
-            # Get last message from user for preview
-            last_user_msg = db.query(UserMessage).filter(
-                UserMessage.user_id == u.id,
-                UserMessage.sent_by == "user"
-            ).order_by(UserMessage.created_at.desc()).first()
-            
-            last_message_preview = None
-            if last_user_msg:
-                preview = last_user_msg.content or f"[{last_user_msg.message_type.upper()}]"
-                last_message_preview = preview[:50] + "..." if len(preview) > 50 else preview
-            
-            result.append({
-                "id": u.id,
-                "telegram_id": u.telegram_id,
-                "first_name": u.first_name,
-                "last_name": u.last_name,
-                "username": u.username,
-                "language": u.language,
-                "is_active": u.is_active,
-                "is_vip": u.is_vip,
-                "unread_count": unread_count,
-                "last_message_preview": last_message_preview,
-                "joined_at": datetime_to_iso_madrid(u.joined_at),
-                "last_message_at": datetime_to_iso_madrid(u.last_message_at)
-            })
-        
-        return {
-            "success": True,
-            "total": total,
-            "users": result
-        }
-    except Exception as e:
-        logger.error(f"Error getting users: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/users/{user_id}/chat/history")
-async def get_user_chat_history(
-    user_id: int,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db),
-    limit: int = 50
-):
-    """Get chat history for a specific user"""
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        messages = db.query(UserMessage)\
-            .filter(UserMessage.user_id == user_id)\
-            .order_by(UserMessage.created_at.desc())\
-            .limit(limit)\
-            .all()
-        
-        # Reverse to show oldest first
-        messages.reverse()
-        
-        # Avoid logging chat history reads — they clutter manual message logs
-        # logger.debug(f"Chat history for user {user_id}: {len(messages)} messages found")
-        
-        return {
-            "success": True,
-            "user": {
-                "id": user.id,
-                "telegram_id": user.telegram_id,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "username": user.username,
-                "is_vip": user.is_vip
-            },
-            "messages": [
-                {
-                    "id": m.id,
-                    "content": m.content,
-                    "type": m.message_type,
-                    "sent_by": m.sent_by,
-                    "attachment_url": m.attachment_url,
-                    "status": m.status,
-                    "is_read": m.is_read,
-                    "created_at": datetime_to_iso_madrid(m.created_at),
-                    "delivered_at": datetime_to_iso_madrid(m.delivered_at)
-                }
-                for m in messages
-            ]
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting chat history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/admin/users/{user_id}/chat/message")
-async def send_manual_message(
-    user_id: int,
-    content: Optional[str] = Form(None),
-    message_type: str = Form(default="text"),
-    attachment: Optional[UploadFile] = File(None),
-    attachment_url: Optional[str] = Form(None),
-    predefined_asset_id: Optional[int] = Form(None),
-    strip_link_ids: Optional[str] = Form(None),
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Send a manual message to a user. Supports multiple strip_link_ids (comma-separated)"""
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Handle multiple strip links
-        if strip_link_ids:
-            try:
-                link_ids = [int(lid.strip()) for lid in strip_link_ids.split(",")]
-                links = db.query(StripLink).filter(StripLink.id.in_(link_ids)).all()
-                if not links:
-                    raise HTTPException(status_code=404, detail="No links found")
-                
-                # Build ONE message with text + multiple buttons
-                buttons = []
-                links_text = []
-                for link in links:
-                    # Append client_reference_id for payment tracking
-                    link_url = link.url
-                    if "?" in link_url:
-                        link_url += f"&client_reference_id={user.telegram_id}"
-                    else:
-                        link_url += f"?client_reference_id={user.telegram_id}"
-                    buttons.append({"text": link.name, "url": link_url})
-                    links_text.append(link.name)
-                
-                # Create ONE UserMessage record
-                content = "Links: " + ", ".join(links_text)
-                user_msg = UserMessage(
-                    user_id=user_id,
-                    content=content,
-                    message_type="link",
-                    sent_by="admin",
-                    attachment_url=links[0].url if links else None,
-                    status="sent"
-                )
-                db.add(user_msg)
-                db.flush()
-                
-                # Send ONE Telegram message with text + multiple buttons
-                try:
-                    success = await telegram_bot.send_message_to_user(
-                        user.telegram_id,
-                        text="💎 Links VIP:",
-                        buttons=buttons
-                    )
-                    
-                    if success:
-                        user_msg.status = "delivered"
-                        user_msg.delivered_at = datetime.utcnow()
-                    else:
-                        user_msg.status = "failed"
-                except Exception as e:
-                    logger.error(f"Failed to send links: {e}")
-                    user_msg.status = "failed"
-                    user_msg.error_message = str(e)
-                
-                db.commit()
-                logger.info(f"Sent payment links to user {user_id}")
-                
-                return {
-                    "success": True,
-                    "message": f"Sent {len(links)} payment link(s)",
-                    "count": len(links)
-                }
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid link IDs format")
-        
-        file_url = None
-        
-        # Handle predefined asset
-        if predefined_asset_id:
-            asset = db.query(PredefinedAsset).filter(
-                PredefinedAsset.id == predefined_asset_id
-            ).first()
-            if not asset:
-                raise HTTPException(status_code=404, detail="Asset not found")
-            
-            content = asset.name if not content else content
-            message_type = asset.asset_type
-            file_url = asset.file_url or asset.link_url
-        
-        # Skip strip link handling here since it's handled above
-        
-        # Handle file upload
-        elif attachment:
-            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-            filename = f"{datetime.utcnow().timestamp()}_{attachment.filename}"
-            filepath = os.path.join(settings.UPLOAD_DIR, filename)
-            
-            with open(filepath, "wb") as f:
-                f.write(await attachment.read())
-            
-            file_url = f"/uploads/{filename}"
-        
-        # Use provided attachment URL
-        elif attachment_url:
-            file_url = attachment_url
-        
-        # Create UserMessage record
-        user_msg = UserMessage(
-            user_id=user_id,
-            content=content,
-            message_type=message_type,
-            sent_by="admin",
-            attachment_url=file_url,
-            status="sent"
-        )
-        db.add(user_msg)
-        db.commit()
-        db.refresh(user_msg)
-        
-        # Send via Telegram bot
-        try:
-            # For local files, keep the path as-is; bot.py will handle converting to bytes
-            # For external URLs, convert to full URL
-            send_url = file_url
-            if file_url and not file_url.startswith("/uploads/"):
-                send_url = get_full_file_url(file_url)
-            
-            telegram_msg_id = await telegram_bot.send_manual_message(
-                user.telegram_id,
-                content=content,
-                message_type=message_type,
-                attachment_url=send_url
-            )
-            
-            if telegram_msg_id:
-                user_msg.telegram_message_id = telegram_msg_id
-                user_msg.status = "delivered"
-                user_msg.delivered_at = datetime.utcnow()
-                db.commit()
-        except Exception as e:
-            logger.error(f"Failed to send message via Telegram: {e}")
-            user_msg.status = "failed"
-            user_msg.error_message = str(e)
-            db.commit()
-        
-        logger.info(f"Manual message sent to user {user_id}")
-        
-        return {
-            "success": True,
-            "message_id": user_msg.id,
-            "status": user_msg.status
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error sending manual message: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/predefined-assets")
-async def get_predefined_assets(
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db),
-    asset_type: Optional[str] = None,
-    category: Optional[str] = None
-):
-    """Get list of predefined assets"""
-    try:
-        query = db.query(PredefinedAsset)
-        
-        if asset_type:
-            query = query.filter(PredefinedAsset.asset_type == asset_type)
-        
-        if category:
-            query = query.filter(PredefinedAsset.category == category)
-        
-        assets = query.order_by(PredefinedAsset.created_at.desc()).all()
-        
-        return {
-            "success": True,
-            "assets": [
-                {
-                    "id": a.id,
-                    "name": a.name,
-                    "asset_type": a.asset_type,
-                    "file_url": a.file_url,
-                    "link_url": a.link_url,
-                    "category": a.category,
-                    "description": a.description,
-                    "created_at": datetime_to_iso_madrid(a.created_at)
-                }
-                for a in assets
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error getting assets: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/admin/predefined-assets")
-async def create_predefined_asset(
-    name: str = Form(...),
-    asset_type: str = Form(...),  # 'audio', 'image', 'video', 'link'
-    category: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    link_url: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Create a new predefined asset"""
-    try:
-        # Check if name already exists
-        existing = db.query(PredefinedAsset).filter(
-            PredefinedAsset.name == name
-        ).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="Asset name already exists")
-        
-        file_url = None
-        
-        # Handle file upload
-        if file:
-            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-            filename = f"{datetime.utcnow().timestamp()}_{file.filename}"
-            filepath = os.path.join(settings.UPLOAD_DIR, filename)
-            
-            with open(filepath, "wb") as f:
-                f.write(await file.read())
-            
-            file_url = f"/uploads/{filename}"
-        
-        asset = PredefinedAsset(
-            name=name,
-            asset_type=asset_type,
-            file_url=file_url,
-            link_url=link_url if asset_type == "link" else None,
-            category=category,
-            description=description
-        )
-        db.add(asset)
-        db.commit()
-        db.refresh(asset)
-        
-        logger.info(f"Predefined asset created: {asset.id} ({name})")
-        
-        return {
-            "success": True,
-            "asset_id": asset.id,
-            "name": asset.name
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating asset: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/admin/predefined-assets/{asset_id}")
-async def delete_predefined_asset(
-    asset_id: int,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Delete a predefined asset"""
-    try:
-        asset = db.query(PredefinedAsset).filter(
-            PredefinedAsset.id == asset_id
-        ).first()
-        if not asset:
-            raise HTTPException(status_code=404, detail="Asset not found")
-        
-        db.delete(asset)
-        db.commit()
-        
-        logger.info(f"Asset {asset_id} deleted")
-        
-        return {"success": True, "message": "Asset deleted"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting asset: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/stripe-links")
-async def get_admin_stripe_links(
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Get list of stripe payment links for admin panel"""
-    try:
-        links = db.query(StripLink).order_by(StripLink.created_at.desc()).all()
-        
-        return {
-            "success": True,
-            "links": [
-                {
-                    "id": link.id,
-                    "name": link.name,
-                    "url": link.url,
-                    "language": link.language,
-                    "duration_days": link.duration_days or 0,
-                    "stripe_link_id": link.stripe_link_id or "",
-                    "created_at": datetime_to_iso_madrid(link.created_at)
-                }
-                for link in links
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error getting stripe links: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/admin/users/{user_id}/chat/mark-read")
-async def mark_messages_as_read(
-    user_id: int,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Mark all unread messages from a user as read"""
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Mark all unread messages as read
-        unread_messages = db.query(UserMessage).filter(
-            UserMessage.user_id == user_id,
-            UserMessage.sent_by == "user",
-            UserMessage.is_read == False
-        ).all()
-        
-        for msg in unread_messages:
-            msg.is_read = True
-            msg.read_at = datetime.utcnow()
-        
-        db.commit()
-        
-        # Mark-read is a view-only action — log at debug level only
-        # logger.debug(f"Marked {len(unread_messages)} messages as read for user {user_id}")
-        
-        return {
-            "success": True,
-            "messages_marked_read": len(unread_messages)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error marking messages as read: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ─── Quick Messages API ────────────────────────────────────────────────────
-
-@app.get("/api/admin/quick-messages")
-async def get_quick_messages(
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Get all quick messages"""
-    try:
-        messages = db.query(QuickMessage).order_by(QuickMessage.created_at.desc()).all()
-        return {
-            "success": True,
-            "messages": [
-                {
-                    "id": m.id,
-                    "name": m.name,
-                    "text_es": m.text_es,
-                    "text_en": m.text_en,
-                    "text_pt": m.text_pt,
-                    "created_at": datetime_to_iso_madrid(m.created_at)
-                }
-                for m in messages
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error getting quick messages: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/admin/quick-messages")
-async def create_quick_message(
-    name: str = Form(...),
-    text_es: str = Form(...),
-    text_en: str = Form(...),
-    text_pt: str = Form(...),
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Create a quick message"""
-    try:
-        msg = QuickMessage(name=name, text_es=text_es, text_en=text_en, text_pt=text_pt)
-        db.add(msg)
-        db.commit()
-        db.refresh(msg)
-        logger.info(f"Quick message created: {msg.id}")
-        return {"success": True, "message_id": msg.id}
-    except Exception as e:
-        logger.error(f"Error creating quick message: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/admin/quick-messages/{msg_id}")
-async def delete_quick_message(
-    msg_id: int,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Delete a quick message"""
-    try:
-        msg = db.query(QuickMessage).filter(QuickMessage.id == msg_id).first()
-        if not msg:
-            raise HTTPException(status_code=404, detail="Not found")
-        db.delete(msg)
-        db.commit()
-        logger.info(f"Quick message deleted: {msg_id}")
-        return {"success": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting quick message: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ─── Message Blocks API ────────────────────────────────────────────────────
-
-class BlockStepInput(BaseModel):
-    step_order: int
-    text_es: str
-    text_en: str
-    text_pt: str
-
-class CreateBlockInput(BaseModel):
-    name: str
-    description: Optional[str] = None
-    category: Optional[str] = None
-    steps: List[BlockStepInput]
-
-
-@app.get("/api/admin/message-blocks")
-async def get_message_blocks(
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Get all message blocks with steps"""
-    try:
-        blocks = db.query(MessageBlock).order_by(MessageBlock.created_at.desc()).all()
-        return {
-            "success": True,
-            "blocks": [
-                {
-                    "id": b.id,
-                    "name": b.name,
-                    "description": b.description,
-                    "category": b.category,
-                    "created_at": datetime_to_iso_madrid(b.created_at),
-                    "steps": [
-                        {"id": s.id, "step_order": s.step_order, "text_es": s.text_es,
-                         "text_en": s.text_en, "text_pt": s.text_pt}
-                        for s in b.steps
-                    ]
-                }
-                for b in blocks
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error getting blocks: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/admin/message-blocks/{block_id}")
-async def get_message_block(
-    block_id: int,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Get single block"""
-    block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
-    if not block:
-        raise HTTPException(status_code=404, detail="Block not found")
-    return {
-        "success": True,
-        "block": {
-            "id": block.id, "name": block.name, "description": block.description,
-            "category": block.category, "created_at": datetime_to_iso_madrid(block.created_at),
-            "steps": [
-                {"id": s.id, "step_order": s.step_order,
-                 "text_es": s.text_es, "text_en": s.text_en, "text_pt": s.text_pt}
-                for s in block.steps
-            ]
-        }
-    }
-
-
-@app.post("/api/admin/message-blocks")
-async def create_message_block(
-    data: CreateBlockInput,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Create message block with steps"""
-    try:
-        if not data.name or not data.steps:
-            raise HTTPException(status_code=400, detail="Name and steps required")
-        block = MessageBlock(name=data.name, description=data.description, category=data.category)
-        db.add(block)
-        db.commit()
-        db.refresh(block)
-        for step_data in data.steps:
-            step = MessageBlockStep(
-                block_id=block.id, step_order=step_data.step_order,
-                text_es=step_data.text_es, text_en=step_data.text_en, text_pt=step_data.text_pt
-            )
-            db.add(step)
-        db.commit()
-        logger.info(f"Block created: {block.id} with {len(data.steps)} steps")
-        return {"success": True, "block_id": block.id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating block: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.put("/api/admin/message-blocks/{block_id}")
-async def update_message_block(
-    block_id: int,
-    data: CreateBlockInput,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Update block (replace steps)"""
-    try:
-        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
-        if not block:
-            raise HTTPException(status_code=404, detail="Block not found")
-        block.name = data.name
-        block.description = data.description
-        block.category = data.category
-        for step in list(block.steps):
-            db.delete(step)
-        for step_data in data.steps:
-            step = MessageBlockStep(
-                block_id=block.id, step_order=step_data.step_order,
-                text_es=step_data.text_es, text_en=step_data.text_en, text_pt=step_data.text_pt
-            )
-            db.add(step)
-        db.commit()
-        db.refresh(block)
-        logger.info(f"Block updated: {block_id}")
-        return {"success": True, "block_id": block.id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating block: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/admin/message-blocks/{block_id}")
-async def delete_message_block(
-    block_id: int,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Delete block"""
-    try:
-        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
-        if not block:
-            raise HTTPException(status_code=404, detail="Block not found")
-        db.delete(block)
-        db.commit()
-        logger.info(f"Block deleted: {block_id}")
-        return {"success": True, "message": "Block deleted"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting block: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/admin/message-blocks/{block_id}/send/{user_id}")
-async def send_message_block_to_user(
-    block_id: int,
-    user_id: int,
-    token: str = Depends(verify_api_token),
-    db: Session = Depends(get_db)
-):
-    """Send block to user, one message per step. Each step is saved separately to chat history."""
-    try:
-        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
-        if not block:
-            raise HTTPException(status_code=404, detail="Block not found")
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        steps = sorted(block.steps, key=lambda s: s.step_order)
-        if not steps:
-            raise HTTPException(status_code=400, detail="Block has no steps")
-        user_lang = user.language or "es"
-        if user_lang not in ("es", "en", "pt"):
-            user_lang = "en"
-        results = []
-        for step in steps:
-            text = getattr(step, f"text_{user_lang}", step.text_es)
-            # Send via Telegram only (do NOT let bot save history, we handle it here)
-            success = await telegram_bot.send_message_to_user(
-                user_id=user.telegram_id,
-                text=text,
-                db=None,
-                user_db_id=None,
-                message_type="text"
-            )
-            if success:
-                # Save EACH step as an independent UserMessage record
-                user_msg = UserMessage(
-                    user_id=user.id,
-                    content=text,
-                    message_type="text",
-                    sent_by="admin",
-                    status="delivered",
-                    delivered_at=datetime.utcnow()
-                )
-                db.add(user_msg)
-                db.commit()
-            results.append({"step": step.step_order, "success": success})
-            # Small delay to avoid flood limits and ensure ordering
-            await asyncio.sleep(0.4)
-        sent_count = sum(1 for r in results if r["success"])
-        logger.info(f"Block {block_id} to user {user_id}: {sent_count}/{len(steps)} sent and saved")
-        return {"success": True, "sent": sent_count, "total": len(steps), "results": results}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error sending block: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
