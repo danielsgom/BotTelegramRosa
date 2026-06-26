@@ -1,0 +1,8 @@
+sdd_models:
+    copilot:
+        sdd-adviser: claude-haiku-4.5
+        sdd-explore: claude-opus-4.8
+        sdd-implement: claude-sonnet-4.6
+        sdd-orchestrator: gpt-5.5
+        sdd-plan: claude-sonnet-4.6
+        sdd-review: gpt-5.5
