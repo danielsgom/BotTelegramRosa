@@ -117,7 +117,7 @@ async def startup_event():
         run_migrations()
         await telegram_bot.start()
         message_scheduler.initialize_schedule()
-        message_scheduler.start()
+        # message_scheduler.start()  # Disabled — manual send only
         logger.info("Application started successfully")
     except Exception as e:
         logger.error(f"Error during startup: {e}")

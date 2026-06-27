@@ -180,6 +180,11 @@ class BatchMessageScheduler:
             except Exception:
                 pass
 
+    async def send_next_batch_message_manual(self):
+        """Manually trigger the next batch message send."""
+        logger.info("[Manual] Triggering batch message send...")
+        await self._async_send_next_batch_message()
+
     def initialize_schedule(self):
         try:
             db = next(get_db())

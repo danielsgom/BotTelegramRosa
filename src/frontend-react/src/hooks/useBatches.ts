@@ -11,6 +11,7 @@ import {
   addMessageToBatch,
   updateMessageInBatch,
   deleteMessageFromBatch,
+  sendNextBatchMessage,
 } from '../api/batches'
 
 const KEY = 'batches'
@@ -62,6 +63,16 @@ export const useActivateBatch = () => {
     mutationFn: activateBatch,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [KEY] })
+      qc.invalidateQueries({ queryKey: ['schedule-state'] })
+    },
+  })
+}
+
+export const useSendNextBatchMessage = () => {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: sendNextBatchMessage,
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['schedule-state'] })
     },
   })

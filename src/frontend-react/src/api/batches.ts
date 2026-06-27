@@ -64,3 +64,6 @@ export const updateMessageInBatch = (
 
 export const deleteMessageFromBatch = (batchId: number, messageId: number) =>
   apiFetch(`/api/batches/${batchId}/messages/${messageId}`, { method: 'DELETE' })
+
+export const sendNextBatchMessage = () =>
+  apiFetch('/api/batches/send-next', { method: 'POST' })

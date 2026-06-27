@@ -17,6 +17,8 @@ from database import BatchScheduleState, Message, MessageBatch, StripLink, User,
 from dependencies import verify_api_token
 from utils import datetime_to_iso_madrid
 
+from scheduler import message_scheduler
+
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -508,4 +510,20 @@ async def delete_message_from_batch(
         raise
     except Exception as e:
         logger.error(f"Error deleting message: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Manual send endpoint ────────────────────────────────────────────────────
+
+@router.post("/send-next")
+async def send_next_batch_message_manual(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    """Manually trigger sending the next batch message to all active non-VIP users."""
+    try:
+        await message_scheduler.send_next_batch_message_manual()
+        return {"success": True, "message": "Batch message send triggered manually"}
+    except Exception as e:
+        logger.error(f"Error in manual batch send: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -123,10 +123,10 @@ async def startup_event():
         # Initialize batch schedule state
         message_scheduler.initialize_schedule()
         
-        # Start batch message scheduler
-        message_scheduler.start()
+        # Start batch message scheduler — DISABLED, manual send only
+        # message_scheduler.start()
         
-        logger.info("Application started successfully")
+        logger.info("Application started successfully (scheduler disabled, manual mode)")
     except Exception as e:
         logger.error(f"Error during startup: {e}")
 
