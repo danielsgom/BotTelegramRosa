@@ -13,14 +13,17 @@ import logging
 import os
 import json
 from typing import List, Optional
+import asyncio
 
 from config import get_settings
-from database import init_db, run_migrations, get_db, User, Message, MessageBatch, BatchScheduleState, MessageSent, Payment, StripLink, VipConfig
+from database import init_db, run_migrations, get_db, User, Message, MessageBatch, BatchScheduleState, MessageSent, Payment, StripLink, VipConfig, PredefinedAsset, QuickMessage, MessageBlock, MessageBlockStep, UserMessage
 from bot import telegram_bot
 from scheduler import message_scheduler
 from stripe_handler import StripeHandler
 from language import LanguageDetector, get_message_template
 from utils import convert_to_madrid_time, datetime_to_iso_madrid
+from dependencies import get_full_file_url
+from schemas import BlockStepInput, CreateBlockInput
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -1497,6 +1500,671 @@ async def stripe_webhook(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error handling webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Admin Routes (/api/admin/*) ───────────────────────────────────────────
+
+# ── Admin Users ──────────────────────────────────────────────────────────────
+@app.get("/api/admin/users")
+async def admin_get_users(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 50,
+    search: Optional[str] = None,
+):
+    try:
+        query = db.query(User).order_by(User.last_message_at.desc())
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                (User.username.like(search_term))
+                | (User.first_name.like(search_term))
+                | (User.last_name.like(search_term))
+            )
+        total = query.count()
+        users = query.offset(skip).limit(limit).all()
+        result = []
+        for u in users:
+            unread_count = db.query(UserMessage).filter(
+                UserMessage.user_id == u.id,
+                UserMessage.sent_by == "user",
+                UserMessage.is_read == False,
+            ).count()
+            last_user_msg = (
+                db.query(UserMessage)
+                .filter(UserMessage.user_id == u.id, UserMessage.sent_by == "user")
+                .order_by(UserMessage.created_at.desc())
+                .first()
+            )
+            last_message_preview = None
+            if last_user_msg:
+                preview = last_user_msg.content or f"[{last_user_msg.message_type.upper()}]"
+                last_message_preview = preview[:50] + "..." if len(preview) > 50 else preview
+            result.append({
+                "id": u.id,
+                "telegram_id": u.telegram_id,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "username": u.username,
+                "language": u.language,
+                "is_active": u.is_active,
+                "is_vip": u.is_vip,
+                "unread_count": unread_count,
+                "last_message_preview": last_message_preview,
+                "joined_at": datetime_to_iso_madrid(u.joined_at),
+                "last_message_at": datetime_to_iso_madrid(u.last_message_at),
+            })
+        return {"success": True, "total": total, "users": result}
+    except Exception as e:
+        logger.error(f"Error getting users for messaging: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/users/{user_id}/chat/history")
+async def admin_get_user_chat_history(
+    user_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+    limit: int = 50,
+):
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        messages = (
+            db.query(UserMessage)
+            .filter(UserMessage.user_id == user_id)
+            .order_by(UserMessage.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        messages.reverse()
+        return {
+            "success": True,
+            "user": {
+                "id": user.id,
+                "telegram_id": user.telegram_id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "username": user.username,
+                "is_vip": user.is_vip,
+            },
+            "messages": [
+                {
+                    "id": m.id,
+                    "content": m.content,
+                    "type": m.message_type,
+                    "sent_by": m.sent_by,
+                    "attachment_url": m.attachment_url,
+                    "status": m.status,
+                    "is_read": m.is_read,
+                    "created_at": datetime_to_iso_madrid(m.created_at),
+                    "delivered_at": datetime_to_iso_madrid(m.delivered_at),
+                }
+                for m in messages
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting chat history for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/users/{user_id}/chat/message")
+async def admin_send_manual_message(
+    user_id: int,
+    content: Optional[str] = Form(None),
+    message_type: str = Form(default="text"),
+    attachment: Optional[UploadFile] = File(None),
+    attachment_url: Optional[str] = Form(None),
+    predefined_asset_id: Optional[int] = Form(None),
+    strip_link_ids: Optional[str] = Form(None),
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if strip_link_ids:
+            try:
+                link_ids = [int(lid.strip()) for lid in strip_link_ids.split(",")]
+                links = db.query(StripLink).filter(StripLink.id.in_(link_ids)).all()
+                if not links:
+                    raise HTTPException(status_code=404, detail="No links found")
+                buttons = []
+                links_text = []
+                for link in links:
+                    link_url = link.url
+                    separator = "&" if "?" in link_url else "?"
+                    link_url += f"{separator}client_reference_id={user.telegram_id}"
+                    buttons.append({"text": link.name, "url": link_url})
+                    links_text.append(link.name)
+                msg_content = "Links: " + ", ".join(links_text)
+                user_msg = UserMessage(
+                    user_id=user_id,
+                    content=msg_content,
+                    message_type="link",
+                    sent_by="admin",
+                    attachment_url=links[0].url if links else None,
+                    status="sent",
+                )
+                db.add(user_msg)
+                db.flush()
+                try:
+                    success = await telegram_bot.send_message_to_user(
+                        user.telegram_id,
+                        text="💎 Links VIP:",
+                        buttons=buttons,
+                    )
+                    if success:
+                        user_msg.status = "delivered"
+                        user_msg.delivered_at = datetime.utcnow()
+                    else:
+                        user_msg.status = "failed"
+                except Exception as e:
+                    logger.error(f"Failed to send links to user {user_id}: {e}")
+                    user_msg.status = "failed"
+                    user_msg.error_message = str(e)
+                db.commit()
+                logger.info(f"Sent {len(links)} payment link(s) to user {user_id}")
+                return {"success": True, "message": f"Sent {len(links)} payment link(s)", "count": len(links)}
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid link IDs format")
+
+        file_url = None
+        if predefined_asset_id:
+            asset = db.query(PredefinedAsset).filter(PredefinedAsset.id == predefined_asset_id).first()
+            if not asset:
+                raise HTTPException(status_code=404, detail="Asset not found")
+            content = asset.name if not content else content
+            message_type = asset.asset_type
+            file_url = asset.file_url or asset.link_url
+        elif attachment:
+            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+            filename = f"{datetime.utcnow().timestamp()}_{attachment.filename}"
+            filepath = os.path.join(settings.UPLOAD_DIR, filename)
+            with open(filepath, "wb") as f:
+                f.write(await attachment.read())
+            file_url = f"/uploads/{filename}"
+        elif attachment_url:
+            file_url = attachment_url
+
+        user_msg = UserMessage(
+            user_id=user_id,
+            content=content,
+            message_type=message_type,
+            sent_by="admin",
+            attachment_url=file_url,
+            status="sent",
+        )
+        db.add(user_msg)
+        db.commit()
+        db.refresh(user_msg)
+
+        try:
+            send_url = file_url
+            if file_url and not file_url.startswith("/uploads/"):
+                send_url = get_full_file_url(file_url)
+            telegram_msg_id = await telegram_bot.send_manual_message(
+                user.telegram_id,
+                content=content,
+                message_type=message_type,
+                attachment_url=send_url,
+            )
+            if telegram_msg_id:
+                user_msg.telegram_message_id = telegram_msg_id
+                user_msg.status = "delivered"
+                user_msg.delivered_at = datetime.utcnow()
+                db.commit()
+        except Exception as e:
+            logger.error(f"Failed to send Telegram message to user {user_id}: {e}")
+            user_msg.status = "failed"
+            user_msg.error_message = str(e)
+            db.commit()
+
+        logger.info(f"Manual message sent to user {user_id}")
+        return {"success": True, "message_id": user_msg.id, "status": user_msg.status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending manual message to user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/users/{user_id}/chat/mark-read")
+async def admin_mark_messages_as_read(
+    user_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        unread_messages = db.query(UserMessage).filter(
+            UserMessage.user_id == user_id,
+            UserMessage.sent_by == "user",
+            UserMessage.is_read == False,
+        ).all()
+        for msg in unread_messages:
+            msg.is_read = True
+            msg.read_at = datetime.utcnow()
+        db.commit()
+        return {"success": True, "messages_marked_read": len(unread_messages)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking messages as read for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Admin Predefined Assets ──────────────────────────────────────────────────
+@app.get("/api/admin/predefined-assets")
+async def admin_get_predefined_assets(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+    asset_type: Optional[str] = None,
+    category: Optional[str] = None,
+):
+    try:
+        query = db.query(PredefinedAsset)
+        if asset_type:
+            query = query.filter(PredefinedAsset.asset_type == asset_type)
+        if category:
+            query = query.filter(PredefinedAsset.category == category)
+        assets = query.order_by(PredefinedAsset.created_at.desc()).all()
+        return {
+            "success": True,
+            "assets": [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "asset_type": a.asset_type,
+                    "file_url": a.file_url,
+                    "link_url": a.link_url,
+                    "category": a.category,
+                    "description": a.description,
+                    "created_at": datetime_to_iso_madrid(a.created_at),
+                }
+                for a in assets
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting predefined assets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/predefined-assets")
+async def admin_create_predefined_asset(
+    name: str = Form(...),
+    asset_type: str = Form(...),
+    category: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    link_url: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        existing = db.query(PredefinedAsset).filter(PredefinedAsset.name == name).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Asset name already exists")
+        file_url = None
+        if file:
+            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+            filename = f"{datetime.utcnow().timestamp()}_{file.filename}"
+            filepath = os.path.join(settings.UPLOAD_DIR, filename)
+            with open(filepath, "wb") as f:
+                f.write(await file.read())
+            file_url = f"/uploads/{filename}"
+        asset = PredefinedAsset(
+            name=name,
+            asset_type=asset_type,
+            file_url=file_url,
+            link_url=link_url if asset_type == "link" else None,
+            category=category,
+            description=description,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        logger.info(f"Predefined asset created: {asset.id} ({name})")
+        return {"success": True, "asset_id": asset.id, "name": asset.name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating predefined asset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/predefined-assets/{asset_id}")
+async def admin_delete_predefined_asset(
+    asset_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        asset = db.query(PredefinedAsset).filter(PredefinedAsset.id == asset_id).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        db.delete(asset)
+        db.commit()
+        logger.info(f"Predefined asset {asset_id} deleted")
+        return {"success": True, "message": "Asset deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting predefined asset {asset_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Admin Stripe Links ───────────────────────────────────────────────────────
+@app.get("/api/admin/stripe-links")
+async def admin_get_stripe_links_admin(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        links = db.query(StripLink).order_by(StripLink.created_at.desc()).all()
+        return {
+            "success": True,
+            "links": [
+                {
+                    "id": link.id,
+                    "name": link.name,
+                    "url": link.url,
+                    "language": link.language,
+                    "duration_days": link.duration_days or 0,
+                    "stripe_link_id": link.stripe_link_id or "",
+                    "created_at": datetime_to_iso_madrid(link.created_at),
+                }
+                for link in links
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting admin stripe links: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Admin Quick Messages ─────────────────────────────────────────────────────
+@app.get("/api/admin/quick-messages")
+async def admin_get_quick_messages(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        messages = db.query(QuickMessage).order_by(QuickMessage.created_at.desc()).all()
+        return {
+            "success": True,
+            "messages": [
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "text_es": m.text_es,
+                    "text_en": m.text_en,
+                    "text_pt": m.text_pt,
+                    "created_at": datetime_to_iso_madrid(m.created_at),
+                }
+                for m in messages
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting quick messages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/quick-messages")
+async def admin_create_quick_message(
+    name: str = Form(...),
+    text_es: str = Form(...),
+    text_en: str = Form(...),
+    text_pt: str = Form(...),
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        msg = QuickMessage(name=name, text_es=text_es, text_en=text_en, text_pt=text_pt)
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+        logger.info(f"Quick message created: {msg.id}")
+        return {"success": True, "message_id": msg.id}
+    except Exception as e:
+        logger.error(f"Error creating quick message: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/quick-messages/{msg_id}")
+async def admin_delete_quick_message(
+    msg_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        msg = db.query(QuickMessage).filter(QuickMessage.id == msg_id).first()
+        if not msg:
+            raise HTTPException(status_code=404, detail="Not found")
+        db.delete(msg)
+        db.commit()
+        logger.info(f"Quick message deleted: {msg_id}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting quick message {msg_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Admin Message Blocks ─────────────────────────────────────────────────────
+@app.get("/api/admin/message-blocks")
+async def admin_get_message_blocks(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        blocks = db.query(MessageBlock).order_by(MessageBlock.created_at.desc()).all()
+        return {
+            "success": True,
+            "blocks": [
+                {
+                    "id": b.id,
+                    "name": b.name,
+                    "description": b.description,
+                    "category": b.category,
+                    "created_at": datetime_to_iso_madrid(b.created_at),
+                    "steps": [
+                        {
+                            "id": s.id,
+                            "step_order": s.step_order,
+                            "text_es": s.text_es,
+                            "text_en": s.text_en,
+                            "text_pt": s.text_pt,
+                        }
+                        for s in b.steps
+                    ],
+                }
+                for b in blocks
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting message blocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/message-blocks/{block_id}")
+async def admin_get_message_block(
+    block_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+    if not block:
+        raise HTTPException(status_code=404, detail="Block not found")
+    return {
+        "success": True,
+        "block": {
+            "id": block.id,
+            "name": block.name,
+            "description": block.description,
+            "category": block.category,
+            "created_at": datetime_to_iso_madrid(block.created_at),
+            "steps": [
+                {
+                    "id": s.id,
+                    "step_order": s.step_order,
+                    "text_es": s.text_es,
+                    "text_en": s.text_en,
+                    "text_pt": s.text_pt,
+                }
+                for s in block.steps
+            ],
+        },
+    }
+
+
+@app.post("/api/admin/message-blocks")
+async def admin_create_message_block(
+    data: CreateBlockInput,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        if not data.name or not data.steps:
+            raise HTTPException(status_code=400, detail="Name and steps required")
+        block = MessageBlock(name=data.name, description=data.description, category=data.category)
+        db.add(block)
+        db.commit()
+        db.refresh(block)
+        for step_data in data.steps:
+            step = MessageBlockStep(
+                block_id=block.id,
+                step_order=step_data.step_order,
+                text_es=step_data.text_es,
+                text_en=step_data.text_en,
+                text_pt=step_data.text_pt,
+            )
+            db.add(step)
+        db.commit()
+        logger.info(f"Message block created: {block.id} with {len(data.steps)} steps")
+        return {"success": True, "block_id": block.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating message block: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/admin/message-blocks/{block_id}")
+async def admin_update_message_block(
+    block_id: int,
+    data: CreateBlockInput,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+        block.name = data.name
+        block.description = data.description
+        block.category = data.category
+        for step in list(block.steps):
+            db.delete(step)
+        for step_data in data.steps:
+            step = MessageBlockStep(
+                block_id=block.id,
+                step_order=step_data.step_order,
+                text_es=step_data.text_es,
+                text_en=step_data.text_en,
+                text_pt=step_data.text_pt,
+            )
+            db.add(step)
+        db.commit()
+        db.refresh(block)
+        logger.info(f"Message block {block_id} updated")
+        return {"success": True, "block_id": block.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating message block {block_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/message-blocks/{block_id}")
+async def admin_delete_message_block(
+    block_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+        db.delete(block)
+        db.commit()
+        logger.info(f"Message block {block_id} deleted")
+        return {"success": True, "message": "Block deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting message block {block_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/message-blocks/{block_id}/send/{user_id}")
+async def admin_send_message_block(
+    block_id: int,
+    user_id: int,
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    try:
+        block = db.query(MessageBlock).filter(MessageBlock.id == block_id).first()
+        if not block:
+            raise HTTPException(status_code=404, detail="Block not found")
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        steps = sorted(block.steps, key=lambda s: s.step_order)
+        if not steps:
+            raise HTTPException(status_code=400, detail="Block has no steps")
+        user_lang = user.language or "es"
+        if user_lang not in ("es", "en", "pt"):
+            user_lang = "en"
+        results = []
+        for step in steps:
+            text = getattr(step, f"text_{user_lang}", step.text_es)
+            success = await telegram_bot.send_message_to_user(
+                user_id=user.telegram_id,
+                text=text,
+                db=None,
+                user_db_id=None,
+                message_type="text",
+            )
+            if success:
+                user_msg = UserMessage(
+                    user_id=user.id,
+                    content=text,
+                    message_type="text",
+                    sent_by="admin",
+                    status="delivered",
+                    delivered_at=datetime.utcnow(),
+                )
+                db.add(user_msg)
+                db.commit()
+            results.append({"step": step.step_order, "success": success})
+            await asyncio.sleep(0.4)
+        sent_count = sum(1 for r in results if r["success"])
+        logger.info(f"Block {block_id} sent to user {user_id}: {sent_count}/{len(steps)} delivered")
+        return {"success": True, "sent": sent_count, "total": len(steps), "results": results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending block {block_id} to user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
