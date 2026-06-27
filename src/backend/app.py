@@ -808,6 +808,20 @@ async def activate_batch(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/batches/send-next")
+async def send_next_batch_message_manual(
+    token: str = Depends(verify_api_token),
+    db: Session = Depends(get_db),
+):
+    """Manually trigger sending the next batch message to all active non-VIP users."""
+    try:
+        await message_scheduler.send_next_batch_message_manual()
+        return {"success": True, "message": "Batch message send triggered manually"}
+    except Exception as e:
+        logger.error(f"Error in manual batch send: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/batches/{batch_id}/messages")
 async def get_batch_messages(
     batch_id: int,
